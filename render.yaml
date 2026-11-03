@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: nexus-enterprise-hrms
+    runtime: node
+    plan: free
+    region: singapore
+    buildCommand: cd client && npm install && npm run build && cd ../server && npm install && npm run build
+    startCommand: cd server && node dist/index.js
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: JWT_SECRET
+        generateValue: true
+      - key: DB_DRIVER
+        value: sqlite
