@@ -5,12 +5,13 @@
   "description": "Production-grade, enterprise backend for Nexus HRMS",
   "main": "dist/index.js",
   "scripts": {
-    "build": "tsc && node -e \"import('node:fs').then(fs => { fs.mkdirSync('dist/db', {recursive: true}); fs.copyFileSync('src/db/schema.sql', 'dist/db/schema.sql'); });\"",
+    "build": "tsc && node -e \"import('node:fs').then(fs => { fs.mkdirSync('dist/db', {recursive: true}); fs.copyFileSync('src/db/schema.sql', 'dist/db/schema.sql'); fs.copyFileSync('src/db/schema.postgres.sql', 'dist/db/schema.postgres.sql'); });\"",
     "start": "node dist/index.js",
     "dev": "tsx watch src/index.ts",
     "db:init": "tsx src/db/init.ts",
     "db:seed": "tsx src/db/seed.ts",
     "db:backup": "tsx src/scripts/backup.ts",
+    "db:migrate:postgres": "tsx src/scripts/migrate_sqlite_to_postgres.ts",
     "test": "vitest run"
   },
   "dependencies": {
@@ -21,6 +22,7 @@
     "helmet": "^8.0.0",
     "jsonwebtoken": "^9.0.2",
     "morgan": "^1.10.0",
+    "pg": "^8.23.1",
     "uuid": "^11.1.0",
     "zod": "^3.24.2"
   },
@@ -31,6 +33,7 @@
     "@types/jsonwebtoken": "^9.0.9",
     "@types/morgan": "^1.9.9",
     "@types/node": "^22.13.10",
+    "@types/pg": "^8.23.1",
     "@types/uuid": "^10.0.0",
     "tsx": "^4.19.3",
     "typescript": "^5.8.2",

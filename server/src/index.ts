@@ -7,6 +7,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { initializeDatabase } from './db/init.js';
+import { initializePostgresDatabase } from './db/postgres.js';
 
 import authRoutes from './routes/auth.routes.js';
 import employeeRoutes from './routes/employee.routes.js';
@@ -21,8 +22,17 @@ import documentRoutes from './routes/document.routes.js';
 
 dotenv.config();
 
-// Ensure DB schema is ready
-initializeDatabase();
+// Ensure DB schema is ready based on configured driver
+const dbDriver = process.env.DB_DRIVER || 'sqlite';
+if (dbDriver === 'postgres') {
+  console.log('[DB] Target Driver: Enterprise PostgreSQL');
+  initializePostgresDatabase().catch((err) => {
+    console.error('[DB Initialization Error - PostgreSQL]', err);
+  });
+} else {
+  console.log('[DB] Target Driver: Embedded SQLite (WAL High-Performance Mode)');
+  initializeDatabase();
+}
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -50,6 +60,9 @@ app.get('/api/health', (_req: Request, res: Response) => {
     service: 'nexus-hrms-server',
     version: '1.0.0',
     environment: process.env.NODE_ENV || 'development',
+    database: {
+      driver: dbDriver,
+    },
   });
 });
 
