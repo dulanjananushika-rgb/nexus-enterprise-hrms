@@ -81,13 +81,65 @@ export class AuthService {
     return { token, user: authPayload };
   }
 
+  public static changePassword(
+    userId: string,
+    oldPasswordPlain: string,
+    newPasswordPlain: string,
+    ipAddress?: string
+  ): void {
+    const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId) as UserRow | undefined;
+    if (!user) throw new Error('User not found.');
+
+    const isOldValid = bcrypt.compareSync(oldPasswordPlain, user.password_hash);
+    if (!isOldValid) {
+      throw new Error('Current password does not match records.');
+    }
+
+    if (newPasswordPlain.length < 8) {
+      throw new Error('New password must be at least 8 characters long.');
+    }
+    if (!/[A-Za-z]/.test(newPasswordPlain) || !/[0-9]/.test(newPasswordPlain)) {
+      throw new Error('New password must contain both alphanumeric letters and at least one number.');
+    }
+
+    const newHash = bcrypt.hashSync(newPasswordPlain, 10);
+    db.prepare("UPDATE users SET password_hash = ?, updated_at = datetime('now') WHERE id = ?").run(newHash, userId);
+
+    AuditService.log({
+      userId,
+      action: 'PASSWORD_CHANGED',
+      entityType: 'USER',
+      entityId: userId,
+      ipAddress,
+    });
+  }
+
+  public static unlockUser(targetUserId: string, adminUserId: string, ipAddress?: string): void {
+    const user = db.prepare('SELECT * FROM users WHERE id = ?').get(targetUserId) as UserRow | undefined;
+    if (!user) throw new Error('Target user not found.');
+
+    db.prepare("UPDATE users SET failed_login_attempts = 0, locked_until = NULL, updated_at = datetime('now') WHERE id = ?").run(
+      targetUserId
+    );
+
+    AuditService.log({
+      userId: adminUserId,
+      action: 'USER_ACCOUNT_UNLOCKED',
+      entityType: 'USER',
+      entityId: targetUserId,
+      ipAddress,
+      newValue: { targetEmail: user.email },
+    });
+  }
+
   public static getProfile(userId: string) {
     const stmt = db.prepare(`
       SELECT 
         u.id as user_id, u.email, u.role, u.is_active,
         e.id as employee_id, e.employee_code, e.first_name, e.last_name,
-        e.nic_passport, e.gender, e.phone, e.hire_date, e.employment_status,
-        e.base_salary_cents, e.bank_name, e.bank_account_number,
+        e.nic_passport, e.gender, e.phone, e.emergency_contact_name, e.emergency_contact_phone,
+        e.hire_date, e.employment_status,
+        e.base_salary_cents, e.bank_name, e.bank_account_number, e.bank_branch_code,
         d.name as department_name, d.code as department_code,
         des.title as designation_title
       FROM users u

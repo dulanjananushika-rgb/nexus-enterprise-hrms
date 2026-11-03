@@ -15,6 +15,7 @@ import leaveRoutes from './routes/leave.routes.js';
 import payrollRoutes from './routes/payroll.routes.js';
 import dashboardRoutes from './routes/dashboard.routes.js';
 import auditRoutes from './routes/audit.routes.js';
+import reportRoutes from './routes/report.routes.js';
 
 dotenv.config();
 
@@ -58,6 +59,7 @@ app.use('/api/leaves', leaveRoutes);
 app.use('/api/payroll', payrollRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/audit-logs', auditRoutes);
+app.use('/api/reports', reportRoutes);
 
 // Static client SPA serving (Unified single-service production mode)
 const __filename = fileURLToPath(import.meta.url);

@@ -2,6 +2,7 @@ import { Router, Response } from 'express';
 import { z } from 'zod';
 import { AttendanceService } from '../services/attendance.service.js';
 import { authenticate, AuthenticatedRequest } from '../middleware/auth.js';
+import { requireRole } from '../middleware/rbac.js';
 import { validateBody } from '../middleware/validate.js';
 
 const router = Router();
@@ -9,6 +10,16 @@ const router = Router();
 const clockInSchema = z.object({
   workMode: z.enum(['ON_SITE', 'REMOTE']).default('ON_SITE'),
   notes: z.string().max(255).optional(),
+});
+
+const regularizeSchema = z.object({
+  employeeId: z.string().uuid(),
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  clockInTime: z.string(),
+  clockOutTime: z.string().optional(),
+  status: z.enum(['PRESENT', 'LATE', 'HALF_DAY']),
+  workMode: z.enum(['ON_SITE', 'REMOTE']).optional(),
+  notes: z.string().min(3),
 });
 
 router.post('/clock-in', authenticate, validateBody(clockInSchema), (req: AuthenticatedRequest, res: Response) => {
@@ -40,6 +51,27 @@ router.post('/clock-out', authenticate, (req: AuthenticatedRequest, res: Respons
     res.status(400).json({ success: false, error: { code: 'CLOCK_OUT_FAILED', message } });
   }
 });
+
+router.post(
+  '/regularize',
+  authenticate,
+  requireRole('SUPER_ADMIN', 'HR_MANAGER', 'LINE_MANAGER'),
+  validateBody(regularizeSchema),
+  (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const ip = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress;
+      const record = AttendanceService.regularize({
+        ...req.body,
+        actorUserId: req.user!.id,
+        ipAddress: ip,
+      });
+      res.json({ success: true, data: record, message: 'Attendance regularized successfully.' });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Regularization failed.';
+      res.status(400).json({ success: false, error: { code: 'REGULARIZE_FAILED', message } });
+    }
+  }
+);
 
 router.get('/today', authenticate, (req: AuthenticatedRequest, res: Response) => {
   try {

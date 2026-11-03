@@ -41,6 +41,26 @@ router.get('/batches/:id/payslips', authenticate, requireRole('SUPER_ADMIN', 'HR
   }
 });
 
+router.post('/batches/:id/recalculate', authenticate, requireRole('SUPER_ADMIN', 'HR_MANAGER'), (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const updated = PayrollService.recalculateBatch(req.params.id as string, req.user!.id);
+    res.json({ success: true, data: updated, message: 'Payroll batch recalculated successfully with fresh attendance and leave records.' });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Failed to recalculate batch.';
+    res.status(400).json({ success: false, error: { code: 'RECALC_FAILED', message } });
+  }
+});
+
+router.delete('/batches/:id', authenticate, requireRole('SUPER_ADMIN', 'HR_MANAGER'), (req: AuthenticatedRequest, res: Response) => {
+  try {
+    PayrollService.deleteDraftBatch(req.params.id as string, req.user!.id);
+    res.json({ success: true, message: 'Draft payroll batch deleted successfully.' });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Failed to delete batch.';
+    res.status(400).json({ success: false, error: { code: 'DELETE_FAILED', message } });
+  }
+});
+
 router.post('/batches/:id/pay', authenticate, requireRole('SUPER_ADMIN', 'HR_MANAGER'), (req: AuthenticatedRequest, res: Response) => {
   try {
     const updated = PayrollService.markAsPaid(req.params.id as string, req.user!.id);
@@ -59,6 +79,18 @@ router.get('/batches/:id/export-bank-csv', authenticate, requireRole('SUPER_ADMI
     res.send(csvData);
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Failed to export bank CSV.';
+    res.status(400).json({ success: false, error: { code: 'EXPORT_FAILED', message } });
+  }
+});
+
+router.get('/batches/:id/export-epf-cform-csv', authenticate, requireRole('SUPER_ADMIN', 'HR_MANAGER'), (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const csvData = PayrollService.exportEpfFormCCsv(req.params.id as string);
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename=epf-etf-form-c-${req.params.id}.csv`);
+    res.send(csvData);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Failed to export EPF Form C CSV.';
     res.status(400).json({ success: false, error: { code: 'EXPORT_FAILED', message } });
   }
 });

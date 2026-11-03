@@ -183,6 +183,147 @@ export class PayrollService {
     }
   }
 
+  public static recalculateBatch(batchId: string, actorUserId: string): PayrollBatchRow {
+    const batch = this.getBatchById(batchId);
+    if (!batch) throw new Error('Payroll batch not found.');
+    if (batch.status === 'PAID') {
+      throw new Error('Cannot recalculate a finalized PAID payroll batch.');
+    }
+
+    db.exec('BEGIN IMMEDIATE;');
+    try {
+      // 1. Delete existing payslips
+      db.prepare('DELETE FROM payslips WHERE batch_id = ?').run(batchId);
+
+      // 2. Fetch active employees
+      const employees = db.prepare(`
+        SELECT * FROM employees 
+        WHERE employment_status IN ('ACTIVE', 'PROBATION')
+      `).all() as unknown as EmployeeRow[];
+
+      let totalGross = 0;
+      let totalNet = 0;
+      let totalEpf = 0;
+
+      const insertPayslip = db.prepare(`
+        INSERT INTO payslips (
+          id, batch_id, employee_id, base_salary_cents, allowances_cents,
+          overtime_pay_cents, unpaid_leave_deductions_cents, gross_salary_cents,
+          employee_epf_cents, employer_epf_cents, employer_etf_cents,
+          apit_tax_cents, other_deductions_cents, net_salary_cents, status
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'GENERATED')
+      `);
+
+      for (const emp of employees) {
+        const baseSalary = emp.base_salary_cents;
+
+        // Overtime from attendance
+        const otStmt = db.prepare(`
+          SELECT COALESCE(SUM(ot_minutes), 0) as total_ot_minutes
+          FROM attendance
+          WHERE employee_id = ? AND strftime('%Y-%m', date) = ?
+        `).get(emp.id, batch.month) as { total_ot_minutes: number };
+
+        const otMinutes = otStmt.total_ot_minutes;
+        const hourlyRateCents = Math.round(baseSalary / 200);
+        const otMinuteRateCents = (hourlyRateCents * 1.5) / 60;
+        const overtimePayCents = Math.round(otMinutes * otMinuteRateCents);
+
+        // Unpaid leaves
+        const unpaidStmt = db.prepare(`
+          SELECT COALESCE(SUM(l.total_days), 0) as total_unpaid_days
+          FROM leave_applications l
+          JOIN leave_types lt ON l.leave_type_id = lt.id
+          WHERE l.employee_id = ? 
+            AND lt.is_paid = 0
+            AND l.status = 'APPROVED_HR'
+            AND strftime('%Y-%m', l.start_date) = ?
+        `).get(emp.id, batch.month) as { total_unpaid_days: number };
+
+        const dailyRateCents = Math.round(baseSalary / 25);
+        const unpaidDeductionsCents = Math.round(unpaidStmt.total_unpaid_days * dailyRateCents);
+
+        const allowancesCents = 1500000;
+        const grossSalaryCents = Math.max(0, baseSalary + allowancesCents + overtimePayCents - unpaidDeductionsCents);
+
+        const employeeEpfCents = Math.round(baseSalary * 0.08);
+        const employerEpfCents = Math.round(baseSalary * 0.12);
+        const employerEtfCents = Math.round(baseSalary * 0.03);
+        const apitTaxCents = this.calculateApitTaxCents(grossSalaryCents);
+
+        const netSalaryCents = Math.max(0, grossSalaryCents - (employeeEpfCents + apitTaxCents));
+
+        insertPayslip.run(
+          uuidv4(),
+          batchId,
+          emp.id,
+          baseSalary,
+          allowancesCents,
+          overtimePayCents,
+          unpaidDeductionsCents,
+          grossSalaryCents,
+          employeeEpfCents,
+          employerEpfCents,
+          employerEtfCents,
+          apitTaxCents,
+          0,
+          netSalaryCents
+        );
+
+        totalGross += grossSalaryCents;
+        totalNet += netSalaryCents;
+        totalEpf += employeeEpfCents + employerEpfCents;
+      }
+
+      db.prepare(`
+        UPDATE payroll_batches 
+        SET total_gross_cents = ?, total_net_cents = ?, total_epf_cents = ?
+        WHERE id = ?
+      `).run(totalGross, totalNet, totalEpf, batchId);
+
+      db.exec('COMMIT;');
+
+      AuditService.log({
+        userId: actorUserId,
+        action: 'PAYROLL_BATCH_RECALCULATED',
+        entityType: 'PAYROLL_BATCH',
+        entityId: batchId,
+        newValue: { month: batch.month, totalGross, totalNet },
+      });
+
+      return this.getBatchById(batchId)!;
+    } catch (err) {
+      db.exec('ROLLBACK;');
+      throw err;
+    }
+  }
+
+  public static deleteDraftBatch(batchId: string, actorUserId: string): void {
+    const batch = this.getBatchById(batchId);
+    if (!batch) throw new Error('Payroll batch not found.');
+    if (batch.status === 'PAID') {
+      throw new Error('Authorized PAID payroll batches cannot be deleted.');
+    }
+
+    db.exec('BEGIN IMMEDIATE;');
+    try {
+      db.prepare('DELETE FROM payslips WHERE batch_id = ?').run(batchId);
+      db.prepare('DELETE FROM payroll_batches WHERE id = ?').run(batchId);
+      db.exec('COMMIT;');
+
+      AuditService.log({
+        userId: actorUserId,
+        action: 'PAYROLL_BATCH_DELETED',
+        entityType: 'PAYROLL_BATCH',
+        entityId: batchId,
+        oldValue: { month: batch.month, status: batch.status },
+      });
+    } catch (err) {
+      db.exec('ROLLBACK;');
+      throw err;
+    }
+  }
+
   public static markAsPaid(batchId: string, actorUserId: string): PayrollBatchRow {
     const batch = this.getBatchById(batchId);
     if (!batch) throw new Error('Payroll batch not found.');
@@ -300,5 +441,74 @@ export class PayrollService {
     });
 
     return [headers.join(','), ...rows].join('\n');
+  }
+
+  public static exportEpfFormCCsv(batchId: string): string {
+    const batch = this.getBatchById(batchId);
+    if (!batch) throw new Error('Payroll batch not found.');
+
+    const payslips = this.getBatchPayslips(batchId);
+    if (payslips.length === 0) {
+      throw new Error('No payslip records found for this batch.');
+    }
+
+    const headers = [
+      'Line No',
+      'Member EPF No / Employee Code',
+      'National Identity Card (NIC)',
+      'Member Full Name',
+      'Total Earnings for EPF (LKR)',
+      'Member EPF Contribution (8%)',
+      'Employer EPF Contribution (12%)',
+      'Total EPF Remittance (20%)',
+      'Employer ETF Contribution (3%)',
+    ];
+
+    let totalBaseLkr = 0;
+    let totalEmpEpf = 0;
+    let totalEmprEpf = 0;
+    let totalEpfRemittance = 0;
+    let totalEtf = 0;
+
+    const rows = payslips.map((p, index) => {
+      const emp = db.prepare('SELECT * FROM employees WHERE id = ?').get(p.employee_id) as unknown as EmployeeRow;
+      const baseLkr = p.base_salary_cents / 100;
+      const empEpfLkr = p.employee_epf_cents / 100;
+      const emprEpfLkr = p.employer_epf_cents / 100;
+      const epfRemitLkr = (p.employee_epf_cents + p.employer_epf_cents) / 100;
+      const etfLkr = p.employer_etf_cents / 100;
+
+      totalBaseLkr += baseLkr;
+      totalEmpEpf += empEpfLkr;
+      totalEmprEpf += emprEpfLkr;
+      totalEpfRemittance += epfRemitLkr;
+      totalEtf += etfLkr;
+
+      return [
+        index + 1,
+        `"${emp.employee_code}"`,
+        `"${emp.nic_passport}"`,
+        `"${emp.first_name} ${emp.last_name}"`,
+        baseLkr.toFixed(2),
+        empEpfLkr.toFixed(2),
+        emprEpfLkr.toFixed(2),
+        epfRemitLkr.toFixed(2),
+        etfLkr.toFixed(2),
+      ].join(',');
+    });
+
+    const summaryRow = [
+      '"TOTAL"',
+      '""',
+      '""',
+      `"Total Staff: ${payslips.length}"`,
+      totalBaseLkr.toFixed(2),
+      totalEmpEpf.toFixed(2),
+      totalEmprEpf.toFixed(2),
+      totalEpfRemittance.toFixed(2),
+      totalEtf.toFixed(2),
+    ].join(',');
+
+    return [headers.join(','), ...rows, summaryRow].join('\n');
   }
 }

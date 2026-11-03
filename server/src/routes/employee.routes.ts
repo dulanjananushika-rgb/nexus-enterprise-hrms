@@ -50,6 +50,12 @@ const updateStatusSchema = z.object({
   status: z.enum(['ACTIVE', 'PROBATION', 'SUSPENDED', 'TERMINATED']),
 });
 
+const updateSelfSchema = z.object({
+  phone: z.string().min(8).optional(),
+  emergencyContactName: z.string().min(1).optional(),
+  emergencyContactPhone: z.string().min(8).optional(),
+});
+
 // Listing with department/role scoping
 router.get('/', authenticate, (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
@@ -81,6 +87,30 @@ router.get('/departments', authenticate, (req: AuthenticatedRequest, res: Respon
 
 router.get('/designations', authenticate, (req: AuthenticatedRequest, res: Response) => {
   res.json({ success: true, data: EmployeeService.getDesignations() });
+});
+
+router.get('/me/profile', authenticate, (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const employee = EmployeeService.getByUserId(req.user!.id);
+    if (!employee) {
+      res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Employee profile not found.' } });
+      return;
+    }
+    res.json({ success: true, data: employee });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Error fetching employee details.';
+    res.status(500).json({ success: false, error: { code: 'ERROR', message } });
+  }
+});
+
+router.put('/me/profile', authenticate, validateBody(updateSelfSchema), (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const updated = EmployeeService.updateSelfProfile(req.user!.id, req.body);
+    res.json({ success: true, data: updated, message: 'Contact details updated successfully.' });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Failed to update personal profile.';
+    res.status(400).json({ success: false, error: { code: 'SELF_UPDATE_FAILED', message } });
+  }
 });
 
 router.get('/:id', authenticate, (req: AuthenticatedRequest, res: Response) => {

@@ -70,6 +70,26 @@ export class EmployeeService {
     return (result as unknown as EmployeeRow) || null;
   }
 
+  public static getByUserId(userId: string): EmployeeRow | null {
+    const stmt = db.prepare(`
+      SELECT 
+        e.*,
+        u.email,
+        u.role,
+        d.name as department_name,
+        des.title as designation_title,
+        (m.first_name || ' ' || m.last_name) as manager_name
+      FROM employees e
+      JOIN users u ON e.user_id = u.id
+      JOIN departments d ON e.department_id = d.id
+      JOIN designations des ON e.designation_id = des.id
+      LEFT JOIN employees m ON e.manager_id = m.id
+      WHERE e.user_id = ?
+    `);
+    const result = stmt.get(userId);
+    return (result as unknown as EmployeeRow) || null;
+  }
+
   public static create(
     data: {
       email: string;
@@ -234,6 +254,46 @@ export class EmployeeService {
     });
 
     return this.getById(id)!;
+  }
+
+  public static updateSelfProfile(
+    userId: string,
+    data: {
+      phone?: string;
+      emergencyContactName?: string;
+      emergencyContactPhone?: string;
+    }
+  ): EmployeeRow {
+    const employee = this.getByUserId(userId);
+    if (!employee) throw new Error('Employee profile not found for this user account.');
+
+    const fields: string[] = [];
+    const values: any[] = [];
+    if (data.phone !== undefined) { fields.push('phone = ?'); values.push(data.phone); }
+    if (data.emergencyContactName !== undefined) { fields.push('emergency_contact_name = ?'); values.push(data.emergencyContactName); }
+    if (data.emergencyContactPhone !== undefined) { fields.push('emergency_contact_phone = ?'); values.push(data.emergencyContactPhone); }
+
+    if (fields.length === 0) return employee;
+
+    fields.push("updated_at = datetime('now')");
+    values.push(employee.id);
+
+    db.prepare(`UPDATE employees SET ${fields.join(', ')} WHERE id = ?`).run(...values);
+
+    AuditService.log({
+      userId,
+      action: 'SELF_UPDATE_PROFILE',
+      entityType: 'EMPLOYEE',
+      entityId: employee.id,
+      oldValue: {
+        phone: employee.phone,
+        emergencyContactName: employee.emergency_contact_name,
+        emergencyContactPhone: employee.emergency_contact_phone,
+      },
+      newValue: data,
+    });
+
+    return this.getById(employee.id)!;
   }
 
   public static updateStatus(

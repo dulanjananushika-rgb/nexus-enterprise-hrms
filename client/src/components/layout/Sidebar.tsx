@@ -8,6 +8,7 @@ import {
   Receipt,
   FileText,
   ShieldAlert,
+  BarChart3,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -49,6 +50,12 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onTabChange }) => 
       label: 'Payroll & Compliance',
       icon: Receipt,
       roles: ['SUPER_ADMIN', 'HR_MANAGER'],
+    },
+    {
+      id: 'reports',
+      label: 'Reports & Analytics',
+      icon: BarChart3,
+      roles: ['SUPER_ADMIN', 'HR_MANAGER', 'LINE_MANAGER'],
     },
     {
       id: 'my-payslips',

@@ -155,3 +155,56 @@ export interface DashboardSummary {
   }>;
   recentActivity: Attendance[];
 }
+
+export interface AttendanceReportRow {
+  employeeId: string;
+  employeeCode: string;
+  fullName: string;
+  departmentName: string;
+  presentDays: number;
+  lateDays: number;
+  halfDays: number;
+  onLeaveDays: number;
+  totalWorkedHours: number;
+  totalOtHours: number;
+}
+
+export interface LeaveReportRow {
+  employeeId: string;
+  employeeCode: string;
+  fullName: string;
+  departmentName: string;
+  leaveTypeCode: string;
+  leaveTypeName: string;
+  entitledDays: number;
+  usedDays: number;
+  pendingDays: number;
+  remainingDays: number;
+}
+
+export interface EpfEtfReportRow {
+  employeeId: string;
+  employeeCode: string;
+  fullName: string;
+  nicPassport: string;
+  grossSalaryCents: number;
+  employeeEpfCents: number;
+  employerEpfCents: number;
+  totalEpfCents: number;
+  employerEtfCents: number;
+  totalRemittanceCents: number;
+}
+
+export interface EpfEtfReport {
+  batchId: string;
+  month: string;
+  records: EpfEtfReportRow[];
+  totals: {
+    totalGrossCents: number;
+    totalEmployeeEpfCents: number;
+    totalEmployerEpfCents: number;
+    totalEpfCents: number;
+    totalEmployerEtfCents: number;
+    grandTotalRemittanceCents: number;
+  };
+}

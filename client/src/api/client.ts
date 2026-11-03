@@ -8,6 +8,9 @@ import {
   Payslip,
   AuditLog,
   DashboardSummary,
+  AttendanceReportRow,
+  LeaveReportRow,
+  EpfEtfReport,
 } from '../types';
 
 const API_BASE = '/api';
@@ -59,6 +62,20 @@ class ApiClient {
     return this.request<User>('/auth/me');
   }
 
+  async changePassword(oldPasswordPlain: string, newPasswordPlain: string): Promise<void> {
+    return this.request<void>('/auth/change-password', {
+      method: 'POST',
+      body: JSON.stringify({ oldPasswordPlain, newPasswordPlain }),
+    });
+  }
+
+  async unlockUser(targetUserId: string): Promise<void> {
+    return this.request<void>('/auth/unlock-user', {
+      method: 'POST',
+      body: JSON.stringify({ targetUserId }),
+    });
+  }
+
   // Dashboard
   async getDashboardSummary(): Promise<DashboardSummary> {
     return this.request<DashboardSummary>('/dashboard/summary');
@@ -83,6 +100,21 @@ class ApiClient {
 
   async updateEmployee(id: string, data: Partial<Employee>): Promise<Employee> {
     return this.request<Employee>(`/employees/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async getMyProfile(): Promise<Employee> {
+    return this.request<Employee>('/employees/me/profile');
+  }
+
+  async updateMyProfile(data: {
+    phone?: string;
+    emergencyContactName?: string;
+    emergencyContactPhone?: string;
+  }): Promise<Employee> {
+    return this.request<Employee>('/employees/me/profile', {
       method: 'PUT',
       body: JSON.stringify(data),
     });
@@ -126,6 +158,21 @@ class ApiClient {
     return this.request<Attendance[]>(`/attendance${query ? `?${query}` : ''}`);
   }
 
+  async regularizeAttendance(data: {
+    employeeId: string;
+    date: string;
+    clockInTime: string;
+    clockOutTime?: string;
+    status: 'PRESENT' | 'LATE' | 'HALF_DAY';
+    workMode?: 'ON_SITE' | 'REMOTE';
+    notes: string;
+  }): Promise<Attendance> {
+    return this.request<Attendance>('/attendance/regularize', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
   // Leaves
   async applyLeave(data: {
     leaveTypeId: string;
@@ -144,6 +191,12 @@ class ApiClient {
     return this.request<LeaveApplication>(`/leaves/${id}/review`, {
       method: 'POST',
       body: JSON.stringify({ decision, rejectionReason }),
+    });
+  }
+
+  async cancelLeave(id: string): Promise<LeaveApplication> {
+    return this.request<LeaveApplication>(`/leaves/${id}/cancel`, {
+      method: 'POST',
     });
   }
 
@@ -182,8 +235,41 @@ class ApiClient {
     });
   }
 
+  async recalculateBatch(batchId: string): Promise<PayrollBatch> {
+    return this.request<PayrollBatch>(`/payroll/batches/${batchId}/recalculate`, {
+      method: 'POST',
+    });
+  }
+
+  async deleteDraftBatch(batchId: string): Promise<void> {
+    return this.request<void>(`/payroll/batches/${batchId}`, {
+      method: 'DELETE',
+    });
+  }
+
   async getMyPayslips(): Promise<Payslip[]> {
     return this.request<Payslip[]>('/payroll/my-payslips');
+  }
+
+  // Reports
+  async getAttendanceReport(params?: {
+    month?: string;
+    startDate?: string;
+    endDate?: string;
+    departmentId?: string;
+  }): Promise<AttendanceReportRow[]> {
+    const query = new URLSearchParams(params as Record<string, string>).toString();
+    return this.request<AttendanceReportRow[]>(`/reports/attendance${query ? `?${query}` : ''}`);
+  }
+
+  async getLeaveReport(params?: { year?: number; departmentId?: string }): Promise<LeaveReportRow[]> {
+    const query = new URLSearchParams(params as any).toString();
+    return this.request<LeaveReportRow[]>(`/reports/leaves${query ? `?${query}` : ''}`);
+  }
+
+  async getEpfReport(params?: { batchId?: string; month?: string }): Promise<EpfEtfReport> {
+    const query = new URLSearchParams(params as Record<string, string>).toString();
+    return this.request<EpfEtfReport>(`/reports/epf-etf${query ? `?${query}` : ''}`);
   }
 
   // Audit

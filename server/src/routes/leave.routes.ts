@@ -51,6 +51,8 @@ router.post(
         applicationId: req.params.id as string,
         reviewerUserId: req.user!.id,
         reviewerRole: req.user!.role,
+        reviewerEmployeeId: req.user!.employeeId,
+        reviewerDepartmentId: req.user!.departmentId,
         decision: req.body.decision,
         rejectionReason: req.body.rejectionReason,
       });
@@ -62,6 +64,22 @@ router.post(
     }
   }
 );
+
+router.post('/:id/cancel', authenticate, (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const cancelled = LeaveService.cancel({
+      applicationId: req.params.id as string,
+      actorUserId: req.user!.id,
+      actorRole: req.user!.role,
+      actorEmployeeId: req.user!.employeeId,
+    });
+
+    res.json({ success: true, data: cancelled, message: 'Leave request cancelled and days refunded.' });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Failed to cancel leave application.';
+    res.status(400).json({ success: false, error: { code: 'CANCEL_FAILED', message } });
+  }
+});
 
 router.get('/balances', authenticate, (req: AuthenticatedRequest, res: Response) => {
   try {
@@ -76,6 +94,20 @@ router.get('/balances', authenticate, (req: AuthenticatedRequest, res: Response)
     if (!targetEmpId) {
       res.json({ success: true, data: [] });
       return;
+    }
+
+    // Line Manager BOLA prevention: verify target belongs to Line Manager's team
+    if (req.user?.role === 'LINE_MANAGER' && targetEmpId !== req.user.employeeId) {
+      const emp = db.prepare('SELECT department_id, manager_id FROM employees WHERE id = ?').get(targetEmpId) as
+        | { department_id: string; manager_id: string | null }
+        | undefined;
+      if (!emp || (emp.department_id !== req.user.departmentId && emp.manager_id !== req.user.employeeId)) {
+        res.status(403).json({
+          success: false,
+          error: { code: 'FORBIDDEN', message: 'You are not authorized to view leave balances for employees outside your department.' },
+        });
+        return;
+      }
     }
 
     const balances = LeaveService.getBalances(targetEmpId, year ? parseInt(year, 10) : undefined);

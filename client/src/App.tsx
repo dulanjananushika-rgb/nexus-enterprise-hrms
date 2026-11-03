@@ -10,6 +10,7 @@ import { LeavePage } from './pages/LeavePage';
 import { PayrollPage } from './pages/PayrollPage';
 import { MyPayslipsPage } from './pages/MyPayslipsPage';
 import { AuditPage } from './pages/AuditPage';
+import { ReportsPage } from './pages/ReportsPage';
 
 const AppContent: React.FC = () => {
   const { user, loading } = useAuth();
@@ -48,6 +49,8 @@ const AppContent: React.FC = () => {
         return <PayrollPage />;
       case 'my-payslips':
         return <MyPayslipsPage />;
+      case 'reports':
+        return <ReportsPage />;
       case 'audit':
         return <AuditPage />;
       default:

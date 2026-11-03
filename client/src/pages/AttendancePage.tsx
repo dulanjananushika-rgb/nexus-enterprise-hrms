@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../api/client';
-import { Attendance } from '../types';
+import { Attendance, Employee } from '../types';
 import { Badge } from '../components/common/Badge';
+import { Modal } from '../components/common/Modal';
 import { useAuth } from '../context/AuthContext';
 import {
   Clock,
@@ -10,6 +11,7 @@ import {
   Laptop,
   Building,
   AlertCircle,
+  FileEdit,
 } from 'lucide-react';
 
 export const AttendancePage: React.FC = () => {
@@ -22,6 +24,35 @@ export const AttendancePage: React.FC = () => {
   const [notes, setNotes] = useState<string>('');
   const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  // Regularization Modal State
+  const [isRegModalOpen, setIsRegModalOpen] = useState<boolean>(false);
+  const [employeeOptions, setEmployeeOptions] = useState<Employee[]>([]);
+  const [regForm, setRegForm] = useState({
+    employeeId: '',
+    date: new Date().toISOString().split('T')[0],
+    clockInTime: '08:30',
+    clockOutTime: '17:00',
+    status: 'PRESENT' as 'PRESENT' | 'LATE' | 'HALF_DAY',
+    workMode: 'ON_SITE' as 'ON_SITE' | 'REMOTE',
+    reason: '',
+  });
+  const [regSubmitting, setRegSubmitting] = useState<boolean>(false);
+  const [regError, setRegError] = useState<string | null>(null);
+
+  const canRegularize =
+    user?.role === 'SUPER_ADMIN' || user?.role === 'HR_MANAGER' || user?.role === 'LINE_MANAGER';
+
+  useEffect(() => {
+    if (canRegularize) {
+      api.getEmployees().then((emps) => {
+        setEmployeeOptions(emps);
+        if (emps.length > 0 && !regForm.employeeId) {
+          setRegForm((prev) => ({ ...prev, employeeId: emps[0].id }));
+        }
+      }).catch(console.error);
+    }
+  }, [user]);
 
   const fetchTodayStatus = async () => {
     if (!user?.employeeId) return;
@@ -80,6 +111,33 @@ export const AttendancePage: React.FC = () => {
       setErrorMsg(err instanceof Error ? err.message : 'Clock-out failed.');
     } finally {
       setPunching(false);
+    }
+  };
+
+  const handleRegularizeSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setRegError(null);
+    setRegSubmitting(true);
+    try {
+      await api.regularizeAttendance({
+        employeeId: regForm.employeeId,
+        date: regForm.date,
+        clockInTime: regForm.clockInTime,
+        clockOutTime: regForm.clockOutTime,
+        status: regForm.status,
+        workMode: regForm.workMode,
+        notes: regForm.reason,
+      });
+      setIsRegModalOpen(false);
+      setRegForm((prev) => ({ ...prev, reason: '' }));
+      if (selectedDate === regForm.date) {
+        await fetchList();
+      }
+      alert('Attendance record regularized successfully.');
+    } catch (err: unknown) {
+      setRegError(err instanceof Error ? err.message : 'Regularization failed.');
+    } finally {
+      setRegSubmitting(false);
     }
   };
 
@@ -217,14 +275,26 @@ export const AttendancePage: React.FC = () => {
             <span>Attendance Log</span>
           </h3>
 
-          <div className="flex items-center space-x-2">
-            <span className="text-xs font-semibold text-slate-500">Date:</span>
-            <input
-              type="date"
-              value={selectedDate}
-              onChange={(e) => setSelectedDate(e.target.value)}
-              className="bg-slate-50 border border-slate-300 rounded-lg px-3 py-1.5 text-xs text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            />
+          <div className="flex items-center space-x-3">
+            {canRegularize && (
+              <button
+                onClick={() => setIsRegModalOpen(true)}
+                className="inline-flex items-center space-x-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-semibold px-3 py-1.5 rounded-lg border border-indigo-200 transition"
+              >
+                <FileEdit className="w-3.5 h-3.5" />
+                <span>Regularize Entry</span>
+              </button>
+            )}
+
+            <div className="flex items-center space-x-2">
+              <span className="text-xs font-semibold text-slate-500">Date:</span>
+              <input
+                type="date"
+                value={selectedDate}
+                onChange={(e) => setSelectedDate(e.target.value)}
+                className="bg-slate-50 border border-slate-300 rounded-lg px-3 py-1.5 text-xs text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
           </div>
         </div>
 
@@ -286,6 +356,148 @@ export const AttendancePage: React.FC = () => {
           </table>
         </div>
       </div>
+
+      {/* Attendance Regularization Modal */}
+      <Modal
+        isOpen={isRegModalOpen}
+        onClose={() => setIsRegModalOpen(false)}
+        title="Administrative Attendance Regularization"
+        maxWidth="md"
+      >
+        <form onSubmit={handleRegularizeSubmit} className="space-y-4 text-left">
+          {regError && (
+            <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-lg">
+              {regError}
+            </div>
+          )}
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">Select Employee</label>
+            <select
+              required
+              value={regForm.employeeId}
+              onChange={(e) => setRegForm((prev) => ({ ...prev, employeeId: e.target.value }))}
+              className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+            >
+              {employeeOptions.map((emp) => (
+                <option key={emp.id} value={emp.id}>
+                  {emp.first_name} {emp.last_name} ({emp.employee_code}) - {emp.department_name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Target Date</label>
+              <input
+                type="date"
+                required
+                value={regForm.date}
+                onChange={(e) => setRegForm((prev) => ({ ...prev, date: e.target.value }))}
+                className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Attendance Status</label>
+              <select
+                value={regForm.status}
+                onChange={(e) =>
+                  setRegForm((prev) => ({
+                    ...prev,
+                    status: e.target.value as 'PRESENT' | 'LATE' | 'HALF_DAY',
+                  }))
+                }
+                className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+              >
+                <option value="PRESENT">PRESENT</option>
+                <option value="LATE">LATE</option>
+                <option value="HALF_DAY">HALF_DAY</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Clock In Time</label>
+              <input
+                type="time"
+                required
+                value={regForm.clockInTime}
+                onChange={(e) => setRegForm((prev) => ({ ...prev, clockInTime: e.target.value }))}
+                className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Clock Out Time</label>
+              <input
+                type="time"
+                required
+                value={regForm.clockOutTime}
+                onChange={(e) => setRegForm((prev) => ({ ...prev, clockOutTime: e.target.value }))}
+                className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">Work Mode</label>
+            <div className="flex items-center space-x-4 text-xs mt-1">
+              <label className="flex items-center space-x-1.5 cursor-pointer">
+                <input
+                  type="radio"
+                  name="regWorkMode"
+                  checked={regForm.workMode === 'ON_SITE'}
+                  onChange={() => setRegForm((prev) => ({ ...prev, workMode: 'ON_SITE' }))}
+                  className="text-indigo-600 focus:ring-indigo-500"
+                />
+                <span>On-Site</span>
+              </label>
+              <label className="flex items-center space-x-1.5 cursor-pointer">
+                <input
+                  type="radio"
+                  name="regWorkMode"
+                  checked={regForm.workMode === 'REMOTE'}
+                  onChange={() => setRegForm((prev) => ({ ...prev, workMode: 'REMOTE' }))}
+                  className="text-indigo-600 focus:ring-indigo-500"
+                />
+                <span>Remote VPN</span>
+              </label>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">Administrative Justification / Reason</label>
+            <textarea
+              required
+              rows={2}
+              value={regForm.reason}
+              onChange={(e) => setRegForm((prev) => ({ ...prev, reason: e.target.value }))}
+              placeholder="e.g. Biometric scanner malfunction / Official off-site client engagement"
+              className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+            />
+          </div>
+
+          <div className="flex justify-end space-x-3 pt-3">
+            <button
+              type="button"
+              onClick={() => setIsRegModalOpen(false)}
+              className="px-4 py-2 text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={regSubmitting}
+              className="px-4 py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-sm transition disabled:opacity-50"
+            >
+              {regSubmitting ? 'Recording...' : 'Save & Regularize'}
+            </button>
+          </div>
+        </form>
+      </Modal>
     </div>
   );
 };

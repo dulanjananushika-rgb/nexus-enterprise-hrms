@@ -4,13 +4,23 @@ import { AttendanceRow } from '../types/index.js';
 import { AuditService } from './audit.service.js';
 
 export class AttendanceService {
+  /**
+   * Helper to format a local calendar date string (YYYY-MM-DD) avoiding UTC midnight rollover bugs
+   */
+  public static getLocalDateString(d: Date = new Date()): string {
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
   public static clockIn(
     employeeId: string,
     workMode: 'ON_SITE' | 'REMOTE' = 'ON_SITE',
     ipAddress?: string,
     notes?: string
   ): AttendanceRow {
-    const today = new Date().toISOString().split('T')[0];
+    const today = this.getLocalDateString();
 
     // Check if already clocked in today
     const existing = db.prepare('SELECT id, clock_in_time FROM attendance WHERE employee_id = ? AND date = ?').get(employeeId, today) as
@@ -24,7 +34,7 @@ export class AttendanceService {
     const now = new Date();
     const clockInIso = now.toISOString();
 
-    // Standard Shift: 08:30 AM grace period
+    // Standard Shift: 08:30 AM grace period in local time
     const shiftStart = new Date(now);
     shiftStart.setHours(8, 30, 0, 0);
 
@@ -48,7 +58,7 @@ export class AttendanceService {
   }
 
   public static clockOut(employeeId: string, ipAddress?: string): AttendanceRow {
-    const today = new Date().toISOString().split('T')[0];
+    const today = this.getLocalDateString();
 
     const current = db.prepare(`
       SELECT * FROM attendance WHERE employee_id = ? AND date = ?
@@ -91,8 +101,115 @@ export class AttendanceService {
     return this.getById(current.id)!;
   }
 
+  public static regularize(
+    params: {
+      employeeId: string;
+      date: string;
+      clockInTime: string;
+      clockOutTime?: string;
+      status: 'PRESENT' | 'LATE' | 'HALF_DAY';
+      workMode?: 'ON_SITE' | 'REMOTE';
+      totalWorkedMinutes?: number;
+      otMinutes?: number;
+      notes?: string;
+      reason?: string;
+      actorUserId?: string;
+      ipAddress?: string;
+    },
+    fallbackActorUserId?: string
+  ): AttendanceRow {
+    // Validate date format YYYY-MM-DD
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(params.date)) {
+      throw new Error("Invalid date format. Expected 'YYYY-MM-DD'.");
+    }
+
+    const noteText = params.reason || params.notes || 'Administrative Regularization';
+    const actor = params.actorUserId || fallbackActorUserId;
+
+    // Calculate duration and OT
+    let totalMinutes = params.totalWorkedMinutes ?? 0;
+    let otMinutes = params.otMinutes ?? 0;
+
+    if (params.totalWorkedMinutes === undefined && params.clockInTime && params.clockOutTime) {
+      const inParts = params.clockInTime.includes('T')
+        ? new Date(params.clockInTime).getTime()
+        : new Date(`1970-01-01T${params.clockInTime}`).getTime();
+      const outParts = params.clockOutTime.includes('T')
+        ? new Date(params.clockOutTime).getTime()
+        : new Date(`1970-01-01T${params.clockOutTime}`).getTime();
+
+      if (!isNaN(inParts) && !isNaN(outParts)) {
+        if (inParts > outParts) {
+          throw new Error('Clock-in time cannot be after clock-out time.');
+        }
+        totalMinutes = Math.max(0, Math.floor((outParts - inParts) / (1000 * 60)));
+        otMinutes = Math.max(0, totalMinutes - 480);
+      }
+    }
+
+    const existing = db.prepare('SELECT id FROM attendance WHERE employee_id = ? AND date = ?').get(
+      params.employeeId,
+      params.date
+    ) as { id: string } | undefined;
+
+    let targetId = existing?.id;
+
+    if (existing) {
+      db.prepare(`
+        UPDATE attendance 
+        SET clock_in_time = ?, clock_out_time = ?, status = ?, work_mode = ?,
+            total_worked_minutes = ?, ot_minutes = ?, notes = ?
+        WHERE id = ?
+      `).run(
+        params.clockInTime,
+        params.clockOutTime || null,
+        params.status,
+        params.workMode || 'ON_SITE',
+        totalMinutes,
+        otMinutes,
+        `Regularized: ${noteText}`,
+        existing.id
+      );
+    } else {
+      targetId = uuidv4();
+      db.prepare(`
+        INSERT INTO attendance (id, employee_id, date, clock_in_time, clock_out_time, status, work_mode, ip_address, total_worked_minutes, ot_minutes, notes)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        targetId,
+        params.employeeId,
+        params.date,
+        params.clockInTime,
+        params.clockOutTime || null,
+        params.status,
+        params.workMode || 'ON_SITE',
+        params.ipAddress || null,
+        totalMinutes,
+        otMinutes,
+        `Regularized: ${noteText}`
+      );
+    }
+
+    AuditService.log({
+      userId: actor,
+      action: 'ATTENDANCE_REGULARIZED',
+      entityType: 'ATTENDANCE',
+      entityId: targetId!,
+      ipAddress: params.ipAddress,
+      newValue: {
+        employeeId: params.employeeId,
+        date: params.date,
+        status: params.status,
+        reason: noteText,
+        totalWorkedMinutes: totalMinutes,
+      },
+    });
+
+    return this.getById(targetId!)!;
+  }
+
   public static getTodayStatus(employeeId: string): AttendanceRow | null {
-    const today = new Date().toISOString().split('T')[0];
+    const today = this.getLocalDateString();
     const stmt = db.prepare('SELECT * FROM attendance WHERE employee_id = ? AND date = ?');
     const result = stmt.get(employeeId, today);
     return (result as unknown as AttendanceRow) || null;

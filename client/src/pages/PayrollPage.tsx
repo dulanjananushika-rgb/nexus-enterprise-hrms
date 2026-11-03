@@ -101,6 +101,47 @@ export const PayrollPage: React.FC = () => {
       .catch(() => alert('Failed to download CSV export.'));
   };
 
+  const downloadFormCCsv = (batchId: string, month: string) => {
+    const token = localStorage.getItem('nexus_auth_token');
+    const url = `/api/payroll/batches/${batchId}/export-epf-cform-csv`;
+    fetch(url, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((res) => res.blob())
+      .then((blob) => {
+        const link = document.createElement('a');
+        link.href = window.URL.createObjectURL(blob);
+        link.download = `epf_cform_remittance_${month}.csv`;
+        link.click();
+      })
+      .catch(() => alert('Failed to download EPF Form C schedule.'));
+  };
+
+  const handleRecalculate = async (batchId: string) => {
+    if (!window.confirm('Recalculate this payroll batch? Payslips will be re-computed with latest employee attendance, leaves, and salary structures.')) {
+      return;
+    }
+    try {
+      await api.recalculateBatch(batchId);
+      await fetchBatches();
+      alert('Payroll batch recalculated successfully.');
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : 'Recalculation failed.');
+    }
+  };
+
+  const handleDeleteBatch = async (batchId: string) => {
+    if (!window.confirm('Are you sure you want to delete this DRAFT payroll batch? This will permanently delete all associated unapproved draft payslips.')) {
+      return;
+    }
+    try {
+      await api.deleteDraftBatch(batchId);
+      await fetchBatches();
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : 'Failed to delete payroll batch.');
+    }
+  };
+
   const formatLkr = (cents: number) => {
     return `LKR ${(cents / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
   };
@@ -176,26 +217,55 @@ export const PayrollPage: React.FC = () => {
                     <td className="py-3 px-4 text-right space-x-2">
                       <button
                         onClick={() => handleViewPayslips(batch)}
-                        className="text-indigo-600 hover:text-indigo-800 text-xs font-semibold px-2.5 py-1 rounded border border-indigo-200 hover:bg-indigo-50 transition"
+                        className="text-indigo-600 hover:text-indigo-800 text-xs font-semibold px-2 py-1 rounded border border-indigo-200 hover:bg-indigo-50 transition"
                       >
                         Itemized Slips
                       </button>
 
                       <button
                         onClick={() => downloadBankCsv(batch.id)}
-                        className="inline-flex items-center space-x-1 text-slate-700 hover:text-slate-900 text-xs font-semibold px-2.5 py-1 rounded border border-slate-200 hover:bg-slate-100 transition"
+                        className="inline-flex items-center space-x-1 text-slate-700 hover:text-slate-900 text-xs font-semibold px-2 py-1 rounded border border-slate-200 hover:bg-slate-100 transition"
                         title="Download CEFT/SLIPS Bank Bulk Transfer CSV"
                       >
                         <Download className="w-3 h-3" />
                         <span>Bank CSV</span>
                       </button>
 
+                      <button
+                        onClick={() => downloadFormCCsv(batch.id, batch.month)}
+                        className="inline-flex items-center space-x-1 text-indigo-700 hover:text-indigo-900 text-xs font-semibold px-2 py-1 rounded border border-indigo-200 hover:bg-indigo-50 transition"
+                        title="Download EPF Form C & ETF Remittance Schedule CSV"
+                      >
+                        <Download className="w-3 h-3" />
+                        <span>Form C CSV</span>
+                      </button>
+
                       {batch.status !== 'PAID' && (
+                        <>
+                          <button
+                            onClick={() => handleRecalculate(batch.id)}
+                            className="text-slate-700 hover:text-slate-900 text-xs font-semibold px-2 py-1 rounded border border-slate-300 hover:bg-slate-100 transition"
+                            title="Recalculate with latest attendance and leave changes"
+                          >
+                            Recalculate
+                          </button>
+
+                          <button
+                            onClick={() => handleMarkPaid(batch.id)}
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-2 py-1 rounded shadow-sm transition"
+                          >
+                            Mark Paid
+                          </button>
+                        </>
+                      )}
+
+                      {batch.status === 'DRAFT' && (
                         <button
-                          onClick={() => handleMarkPaid(batch.id)}
-                          className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-2.5 py-1 rounded shadow-sm transition"
+                          onClick={() => handleDeleteBatch(batch.id)}
+                          className="text-rose-600 hover:text-rose-800 text-xs font-semibold px-2 py-1 rounded border border-rose-200 hover:bg-rose-50 transition"
+                          title="Delete Draft Batch"
                         >
-                          Mark Paid
+                          Delete
                         </button>
                       )}
                     </td>

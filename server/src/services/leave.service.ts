@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import { db } from '../db/database.js';
-import { LeaveApplicationRow, LeaveBalanceRow } from '../types/index.js';
+import { LeaveApplicationRow, LeaveBalanceRow, EmployeeRow } from '../types/index.js';
 import { AuditService } from './audit.service.js';
 
 export class LeaveService {
@@ -9,13 +9,19 @@ export class LeaveService {
     leaveTypeId: string;
     startDate: string;
     endDate: string;
-    totalDays: number;
+    totalDays?: number;
     reason: string;
   }): LeaveApplicationRow {
     if (new Date(data.startDate) > new Date(data.endDate)) {
       throw new Error('Start date cannot be after end date.');
     }
-    if (data.totalDays <= 0) {
+    const totalDays =
+      data.totalDays ??
+      Math.max(
+        1,
+        Math.round((new Date(data.endDate).getTime() - new Date(data.startDate).getTime()) / (1000 * 60 * 60 * 24)) + 1
+      );
+    if (totalDays <= 0) {
       throw new Error('Total leave days must be greater than zero.');
     }
 
@@ -56,8 +62,8 @@ export class LeaveService {
         }
 
         const available = balance.remaining_days - balance.pending_days;
-        if (available < data.totalDays) {
-          throw new Error(`Insufficient leave balance. Available: ${available} day(s), Requested: ${data.totalDays} day(s).`);
+        if (available < totalDays) {
+          throw new Error(`Insufficient leave balance. Available: ${available} day(s), Requested: ${totalDays} day(s).`);
         }
 
         // Increment pending_days in balance
@@ -65,7 +71,7 @@ export class LeaveService {
           UPDATE leave_balances 
           SET pending_days = pending_days + ?
           WHERE id = ?
-        `).run(data.totalDays, balance.id);
+        `).run(totalDays, balance.id);
       }
 
       // 3. Create Application
@@ -80,7 +86,7 @@ export class LeaveService {
         data.leaveTypeId,
         data.startDate,
         data.endDate,
-        data.totalDays,
+        totalDays,
         data.reason
       );
 
@@ -104,6 +110,8 @@ export class LeaveService {
     applicationId: string;
     reviewerUserId: string;
     reviewerRole: string;
+    reviewerEmployeeId?: string;
+    reviewerDepartmentId?: string;
     decision: 'APPROVE' | 'REJECT';
     rejectionReason?: string;
   }): LeaveApplicationRow {
@@ -112,6 +120,20 @@ export class LeaveService {
 
     if (app.status === 'APPROVED_HR' || app.status === 'REJECTED' || app.status === 'CANCELLED') {
       throw new Error(`Cannot review application with current status: ${app.status}.`);
+    }
+
+    // Role-based scoping: Line Managers can only review reportees in their department/hierarchy
+    if (params.reviewerRole === 'LINE_MANAGER') {
+      const applicantEmp = db.prepare('SELECT manager_id, department_id FROM employees WHERE id = ?').get(app.employee_id) as
+        | { manager_id: string | null; department_id: string }
+        | undefined;
+
+      const isDirectReport = applicantEmp?.manager_id && applicantEmp.manager_id === params.reviewerEmployeeId;
+      const isSameDept = applicantEmp?.department_id && applicantEmp.department_id === params.reviewerDepartmentId;
+
+      if (!isDirectReport && !isSameDept) {
+        throw new Error('Access denied: Line Managers can only review leave requests for subordinates in their department.');
+      }
     }
 
     db.exec('BEGIN IMMEDIATE;');
@@ -170,6 +192,73 @@ export class LeaveService {
         entityType: 'LEAVE',
         entityId: params.applicationId,
         newValue: { decision: params.decision, reviewerRole: params.reviewerRole },
+      });
+
+      return this.getById(params.applicationId)!;
+    } catch (err) {
+      db.exec('ROLLBACK;');
+      throw err;
+    }
+  }
+
+  public static cancel(params: {
+    applicationId: string;
+    actorUserId: string;
+    actorRole: string;
+    actorEmployeeId?: string;
+  }): LeaveApplicationRow {
+    const app = this.getById(params.applicationId);
+    if (!app) throw new Error('Leave application not found.');
+
+    if (app.status === 'CANCELLED' || app.status === 'REJECTED') {
+      throw new Error(`Cannot cancel a leave application with status '${app.status}'.`);
+    }
+
+    // Ownership check: Standard employee can only cancel their own leaves
+    if (params.actorRole === 'EMPLOYEE' && app.employee_id !== params.actorEmployeeId) {
+      throw new Error('Access denied: You can only cancel your own leave applications.');
+    }
+
+    db.exec('BEGIN IMMEDIATE;');
+    try {
+      const leaveType = db.prepare('SELECT is_paid FROM leave_types WHERE id = ?').get(app.leave_type_id) as { is_paid: number };
+      const currentYear = new Date(app.start_date).getFullYear();
+
+      if (app.status === 'PENDING' || app.status === 'APPROVED_MANAGER') {
+        // Refund pending days
+        if (leaveType.is_paid === 1) {
+          db.prepare(`
+            UPDATE leave_balances 
+            SET pending_days = MAX(0, pending_days - ?)
+            WHERE employee_id = ? AND leave_type_id = ? AND year = ?
+          `).run(app.total_days, app.employee_id, app.leave_type_id, currentYear);
+        }
+      } else if (app.status === 'APPROVED_HR') {
+        // If already approved by HR, refund used days and restore remaining days
+        if (leaveType.is_paid === 1) {
+          db.prepare(`
+            UPDATE leave_balances 
+            SET used_days = MAX(0, used_days - ?),
+                remaining_days = remaining_days + ?
+            WHERE employee_id = ? AND leave_type_id = ? AND year = ?
+          `).run(app.total_days, app.total_days, app.employee_id, app.leave_type_id, currentYear);
+        }
+      }
+
+      db.prepare(`
+        UPDATE leave_applications 
+        SET status = 'CANCELLED', updated_at = datetime('now')
+        WHERE id = ?
+      `).run(params.applicationId);
+
+      db.exec('COMMIT;');
+
+      AuditService.log({
+        userId: params.actorUserId,
+        action: 'LEAVE_CANCELLED',
+        entityType: 'LEAVE',
+        entityId: params.applicationId,
+        newValue: { refundedDays: app.total_days },
       });
 
       return this.getById(params.applicationId)!;

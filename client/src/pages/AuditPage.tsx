@@ -7,6 +7,8 @@ export const AuditPage: React.FC = () => {
   const [logs, setLogs] = useState<AuditLog[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [expandedLogId, setExpandedLogId] = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState<string>('');
+  const [actionCategory, setActionCategory] = useState<string>('ALL');
 
   useEffect(() => {
     const fetchLogs = async () => {
@@ -36,6 +38,23 @@ export const AuditPage: React.FC = () => {
     return 'bg-slate-50 text-slate-700 border-slate-200';
   };
 
+  const filteredLogs = logs.filter((log) => {
+    const matchesCategory =
+      actionCategory === 'ALL' ||
+      log.action.includes(actionCategory) ||
+      log.entity_type === actionCategory;
+
+    const term = searchTerm.toLowerCase();
+    const matchesSearch =
+      !searchTerm ||
+      log.action.toLowerCase().includes(term) ||
+      log.entity_type.toLowerCase().includes(term) ||
+      log.entity_id.toLowerCase().includes(term) ||
+      (log.user_email && log.user_email.toLowerCase().includes(term));
+
+    return matchesCategory && matchesSearch;
+  });
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -47,6 +66,34 @@ export const AuditPage: React.FC = () => {
         <p className="text-sm text-slate-500 mt-1">
           Cryptographically recorded, append-only security logs for salary mutations, permission elevations, and state transitions.
         </p>
+      </div>
+
+      {/* Filter Bar */}
+      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-4">
+        <div className="flex flex-wrap items-center gap-3">
+          <input
+            type="text"
+            placeholder="Search by user email, action, entity ID..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-72 bg-slate-50 border border-slate-300 rounded-lg px-3 py-1.5 text-xs text-slate-800 placeholder-slate-400 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+          />
+          <select
+            value={actionCategory}
+            onChange={(e) => setActionCategory(e.target.value)}
+            className="bg-slate-50 border border-slate-300 rounded-lg px-3 py-1.5 text-xs text-slate-800 font-medium focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+          >
+            <option value="ALL">All Categories</option>
+            <option value="LOGIN">Auth & Sessions</option>
+            <option value="EMPLOYEE">Employee Profiles</option>
+            <option value="LEAVE">Leaves & Absence</option>
+            <option value="PAYROLL">Payroll & Wages</option>
+            <option value="ATTENDANCE">Attendance Shifts</option>
+          </select>
+        </div>
+        <div className="text-xs text-slate-500 font-medium">
+          Showing <span className="font-bold text-slate-900">{filteredLogs.length}</span> of {logs.length} logged events
+        </div>
       </div>
 
       {/* Logs Table */}
@@ -70,14 +117,14 @@ export const AuditPage: React.FC = () => {
                     Loading audit trail records...
                   </td>
                 </tr>
-              ) : logs.length === 0 ? (
+              ) : filteredLogs.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="text-center py-8 text-slate-400">
-                    No audit records registered yet.
+                    No matching audit records found.
                   </td>
                 </tr>
               ) : (
-                logs.map((log) => {
+                filteredLogs.map((log) => {
                   const isExpanded = expandedLogId === log.id;
                   const hasDetails = log.old_value_json || log.new_value_json;
 

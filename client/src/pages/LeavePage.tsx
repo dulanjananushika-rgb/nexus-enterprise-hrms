@@ -107,6 +107,18 @@ export const LeavePage: React.FC = () => {
     }
   };
 
+  const handleCancelLeave = async (appId: string) => {
+    if (!window.confirm('Are you sure you want to cancel this leave request? Allocated days will be restored to your leave balance immediately.')) {
+      return;
+    }
+    try {
+      await api.cancelLeave(appId);
+      await fetchData();
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : 'Failed to cancel leave application.');
+    }
+  };
+
   const pendingApprovals = applications.filter(
     (a) => a.status === 'PENDING' || (user?.role === 'SUPER_ADMIN' || user?.role === 'HR_MANAGER' ? a.status === 'APPROVED_MANAGER' : false)
   );
@@ -240,18 +252,19 @@ export const LeavePage: React.FC = () => {
                 <th className="py-3 px-4">Days</th>
                 <th className="py-3 px-4">Reason</th>
                 <th className="py-3 px-4">Status</th>
+                <th className="py-3 px-4 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {loading ? (
                 <tr>
-                  <td colSpan={6} className="text-center py-8 text-slate-400">
+                  <td colSpan={7} className="text-center py-8 text-slate-400">
                     Loading leave records...
                   </td>
                 </tr>
               ) : applications.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="text-center py-8 text-slate-400">
+                  <td colSpan={7} className="text-center py-8 text-slate-400">
                     No leave requests on record.
                   </td>
                 </tr>
@@ -277,6 +290,19 @@ export const LeavePage: React.FC = () => {
                           {app.rejection_reason}
                         </div>
                       )}
+                    </td>
+                    <td className="py-3 px-4 text-right">
+                      {['PENDING', 'APPROVED_MANAGER', 'APPROVED_HR'].includes(app.status) &&
+                        (app.employee_id === user?.employeeId ||
+                          user?.role === 'SUPER_ADMIN' ||
+                          user?.role === 'HR_MANAGER') && (
+                          <button
+                            onClick={() => handleCancelLeave(app.id)}
+                            className="text-xs font-semibold text-rose-600 hover:text-rose-800 hover:underline"
+                          >
+                            Cancel
+                          </button>
+                        )}
                     </td>
                   </tr>
                 ))
