@@ -4,3 +4,6 @@ dist/
 *.log
 data/*.db*
 !data/.gitkeep
+backups/
+uploads/
+
