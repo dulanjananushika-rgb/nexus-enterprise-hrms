@@ -6,6 +6,7 @@ import { Modal } from '../components/common/Modal';
 import {
   PlusCircle,
   Download,
+  Printer,
 } from 'lucide-react';
 
 export const PayrollPage: React.FC = () => {
@@ -335,7 +336,7 @@ export const PayrollPage: React.FC = () => {
                       <td className="py-2 px-3 font-mono font-bold text-emerald-600">
                         {formatLkr(slip.net_salary_cents)}
                       </td>
-                      <td className="py-2 px-3 text-right">
+                      <td className="py-2 px-3 text-right space-x-2">
                         <button
                           onClick={() => {
                             setSingleSlip(slip);
@@ -343,8 +344,17 @@ export const PayrollPage: React.FC = () => {
                           }}
                           className="text-indigo-600 hover:underline font-semibold"
                         >
-                          Full Breakdown
+                          Breakdown
                         </button>
+                        <a
+                          href={`/api/payroll/payslips/${slip.id}/print`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-slate-400 hover:text-indigo-600 inline-block align-middle"
+                          title="Print / Save PDF"
+                        >
+                          <Printer className="w-3.5 h-3.5" />
+                        </a>
                       </td>
                     </tr>
                   ))}
@@ -445,6 +455,19 @@ export const PayrollPage: React.FC = () => {
               <span className="text-lg font-black font-mono text-emerald-700">
                 {formatLkr(singleSlip.net_salary_cents)}
               </span>
+            </div>
+
+            {/* Print & PDF Action */}
+            <div className="pt-2 flex justify-end">
+              <a
+                href={`/api/payroll/payslips/${singleSlip.id}/print`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold shadow-sm transition"
+              >
+                <Printer className="w-4 h-4" />
+                <span>Print / Save PDF Payslip</span>
+              </a>
             </div>
           </div>
         </Modal>

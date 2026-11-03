@@ -81,6 +81,8 @@ export interface LeaveApplicationRow {
   status: 'PENDING' | 'APPROVED_MANAGER' | 'APPROVED_HR' | 'REJECTED' | 'CANCELLED';
   reviewed_by_user_id: string | null;
   rejection_reason: string | null;
+  attachment_name?: string | null;
+  attachment_url?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -144,3 +146,47 @@ export interface AuditLogRow {
   ip_address: string | null;
   created_at: string;
 }
+
+export type DocumentCategory = 'NIC_PASSPORT' | 'APPOINTMENT_LETTER' | 'CV' | 'MEDICAL_SLIP' | 'CERTIFICATE' | 'OTHER';
+
+export interface DocumentRow {
+  id: string;
+  employee_id: string;
+  title: string;
+  category: DocumentCategory;
+  file_name: string;
+  file_path: string;
+  file_size_bytes: number;
+  mime_type: string;
+  uploaded_by_user_id: string;
+  notes: string | null;
+  created_at: string;
+  employee_name?: string;
+}
+
+export interface GratuityProvisionRow {
+  employeeId: string;
+  employeeCode: string;
+  fullName: string;
+  departmentName: string;
+  hireDate: string;
+  yearsOfService: number;
+  isVested: boolean;
+  baseSalaryCents: number;
+  monthlySalaryLkr: number;
+  statutoryGratuityLiabilityCents: number;
+  accruedLkas19ReserveCents: number;
+}
+
+export interface GratuitySummaryReport {
+  records: GratuityProvisionRow[];
+  totals: {
+    totalEmployees: number;
+    vestedEmployees: number;
+    unvestedEmployees: number;
+    totalStatutoryLiabilityCents: number;
+    totalLkas19ReserveCents: number;
+    averageTenureYears: number;
+  };
+}
+

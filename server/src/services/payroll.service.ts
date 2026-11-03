@@ -2,6 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { db } from '../db/database.js';
 import { PayrollBatchRow, PayslipRow, EmployeeRow } from '../types/index.js';
 import { AuditService } from './audit.service.js';
+import { NotificationService } from './notification.service.js';
 
 export class PayrollService {
   /**
@@ -354,6 +355,13 @@ export class PayrollService {
         newValue: { paidAt: nowIso },
       });
 
+      NotificationService.notifyAllActive({
+        title: 'Salary & Payslip Disbursed',
+        message: `Monthly salary run for ${batch.month} has been authorized. Your payslip is available.`,
+        type: 'PAYROLL',
+        link: 'my-payslips',
+      });
+
       return this.getBatchById(batchId)!;
     } catch (err) {
       db.exec('ROLLBACK;');
@@ -510,5 +518,169 @@ export class PayrollService {
     ].join(',');
 
     return [headers.join(','), ...rows, summaryRow].join('\n');
+  }
+
+  public static getPayslipById(payslipId: string): (PayslipRow & { month: string; nic_passport: string; bank_name: string; bank_account_number: string }) | null {
+    const stmt = db.prepare(`
+      SELECT 
+        p.*,
+        b.month,
+        (e.first_name || ' ' || e.last_name) as employee_name,
+        e.employee_code,
+        e.nic_passport,
+        e.bank_name,
+        e.bank_account_number,
+        d.name as department_name
+      FROM payslips p
+      JOIN payroll_batches b ON p.batch_id = b.id
+      JOIN employees e ON p.employee_id = e.id
+      JOIN departments d ON e.department_id = d.id
+      WHERE p.id = ?
+    `);
+    const row = stmt.get(payslipId);
+    return (row as any) || null;
+  }
+
+  public static generatePayslipHtml(payslipId: string): string {
+    const slip = this.getPayslipById(payslipId);
+    if (!slip) {
+      throw new Error('Payslip not found.');
+    }
+
+    const formatLkr = (cents: number) => `LKR ${(cents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Payslip - ${slip.employee_code} - ${slip.month}</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; color: #1e293b; background: #f8fafc; padding: 30px 20px; font-size: 13px; }
+    .voucher-card { max-width: 780px; margin: 0 auto; background: #ffffff; border: 1px solid #cbd5e1; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.06); padding: 36px 40px; position: relative; }
+    .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #0f172a; padding-bottom: 20px; margin-bottom: 24px; }
+    .brand h1 { font-size: 24px; font-weight: 800; color: #0f172a; letter-spacing: -0.5px; }
+    .brand p { font-size: 11px; color: #64748b; margin-top: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .doc-meta { text-align: right; }
+    .doc-meta .title { font-size: 16px; font-weight: 700; color: #4338ca; text-transform: uppercase; }
+    .doc-meta .period { font-size: 12px; color: #475569; font-weight: 600; margin-top: 3px; font-family: monospace; }
+    .grid-info { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; background: #f1f5f9; padding: 16px 20px; border-radius: 6px; margin-bottom: 24px; font-size: 12px; }
+    .info-item { display: flex; justify-content: space-between; margin-bottom: 4px; }
+    .info-label { color: #64748b; font-weight: 500; }
+    .info-val { color: #0f172a; font-weight: 600; }
+    .breakdown-table { width: 100%; border-collapse: collapse; margin-bottom: 24px; }
+    .breakdown-table th { background: #e2e8f0; color: #334155; text-transform: uppercase; font-size: 11px; letter-spacing: 0.5px; font-weight: 700; text-align: left; padding: 10px 14px; }
+    .breakdown-table td { padding: 9px 14px; border-bottom: 1px solid #e2e8f0; font-size: 12px; }
+    .breakdown-table .amount { text-align: right; font-family: "Courier New", Courier, monospace; font-weight: 600; }
+    .table-subhead { font-weight: 700; background: #f8fafc; color: #475569; font-size: 11px; text-transform: uppercase; }
+    .highlight-row { background: #faf5ff; font-weight: 700; color: #581c87; border-top: 1px solid #d8b4fe; }
+    .net-box { background: #ecfdf5; border: 1.5px solid #10b981; border-radius: 8px; padding: 16px 20px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 28px; }
+    .net-title { font-size: 14px; font-weight: 800; color: #065f46; text-transform: uppercase; }
+    .net-sub { font-size: 11px; color: #047857; margin-top: 2px; }
+    .net-val { font-size: 22px; font-weight: 900; font-family: monospace; color: #047857; }
+    .statutory-card { background: #eef2ff; border: 1px solid #c7d2fe; border-radius: 6px; padding: 12px 18px; margin-bottom: 24px; font-size: 11px; color: #3730a3; }
+    .footer-note { border-top: 1px dashed #cbd5e1; padding-top: 16px; display: flex; justify-content: space-between; font-size: 10px; color: #94a3b8; }
+    .print-btn-bar { max-width: 780px; margin: 0 auto 16px auto; display: flex; justify-content: flex-end; gap: 10px; }
+    .btn { background: #4f46e5; color: #ffffff; border: none; padding: 8px 18px; border-radius: 6px; font-weight: 600; font-size: 12px; cursor: pointer; text-decoration: none; }
+    .btn:hover { background: #4338ca; }
+    @media print {
+      body { background: #ffffff; padding: 0; }
+      .print-btn-bar { display: none; }
+      .voucher-card { box-shadow: none; border: none; padding: 0; }
+    }
+  </style>
+</head>
+<body>
+  <div class="print-btn-bar">
+    <button class="btn" onclick="window.print()">🖨️ Print / Save as PDF</button>
+  </div>
+  <div class="voucher-card">
+    <div class="header">
+      <div class="brand">
+        <h1>NEXUS TECHNOLOGIES (PVT) LTD</h1>
+        <p>Enterprise Human Resource & Payroll Management</p>
+      </div>
+      <div class="doc-meta">
+        <div class="title">Confidential Salary Voucher</div>
+        <div class="period">Pay Period: ${slip.month}</div>
+      </div>
+    </div>
+
+    <div class="grid-info">
+      <div>
+        <div class="info-item"><span class="info-label">Employee ID:</span><span class="info-val font-mono">${slip.employee_code}</span></div>
+        <div class="info-item"><span class="info-label">Full Name:</span><span class="info-val">${slip.employee_name}</span></div>
+        <div class="info-item"><span class="info-label">NIC / Passport:</span><span class="info-val font-mono">${slip.nic_passport}</span></div>
+        <div class="info-item"><span class="info-label">Department:</span><span class="info-val">${slip.department_name}</span></div>
+      </div>
+      <div>
+        <div class="info-item"><span class="info-label">Disbursement Status:</span><span class="info-val" style="color: #059669;">${slip.status}</span></div>
+        <div class="info-item"><span class="info-label">Bank Name:</span><span class="info-val">${slip.bank_name}</span></div>
+        <div class="info-item"><span class="info-label">Bank Account:</span><span class="info-val font-mono">${slip.bank_account_number}</span></div>
+        <div class="info-item"><span class="info-label">Generated Date:</span><span class="info-val font-mono">${slip.created_at.slice(0, 10)}</span></div>
+      </div>
+    </div>
+
+    <table class="breakdown-table">
+      <thead>
+        <tr>
+          <th>Earnings & Allowances</th>
+          <th style="text-align: right;">Amount (LKR)</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td>Basic Monthly Salary</td><td class="amount">${formatLkr(slip.base_salary_cents)}</td></tr>
+        ${slip.overtime_pay_cents > 0 ? `<tr><td>Overtime (OT) Earnings</td><td class="amount">${formatLkr(slip.overtime_pay_cents)}</td></tr>` : ''}
+        ${slip.allowances_cents > 0 ? `<tr><td>Standard Allowances</td><td class="amount">${formatLkr(slip.allowances_cents)}</td></tr>` : ''}
+        <tr class="highlight-row">
+          <td>Total Gross Salary</td>
+          <td class="amount">${formatLkr(slip.gross_salary_cents)}</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <table class="breakdown-table">
+      <thead>
+        <tr>
+          <th>Statutory & Voluntary Deductions</th>
+          <th style="text-align: right;">Deduction (LKR)</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td>Employee EPF (8% Statutory Contribution)</td><td class="amount" style="color: #b91c1c;">${formatLkr(slip.employee_epf_cents)}</td></tr>
+        <tr><td>APIT Income Tax Withholding (IRD Inland Revenue)</td><td class="amount" style="color: #b91c1c;">${formatLkr(slip.apit_tax_cents)}</td></tr>
+        ${slip.unpaid_leave_deductions_cents > 0 ? `<tr><td>Unpaid Leave Deductions</td><td class="amount" style="color: #b91c1c;">${formatLkr(slip.unpaid_leave_deductions_cents)}</td></tr>` : ''}
+        ${slip.other_deductions_cents > 0 ? `<tr><td>Other Deductions</td><td class="amount" style="color: #b91c1c;">${formatLkr(slip.other_deductions_cents)}</td></tr>` : ''}
+        <tr class="highlight-row" style="background: #fff1f2; color: #9f1239; border-top-color: #fca5a5;">
+          <td>Total Deductions</td>
+          <td class="amount">${formatLkr(slip.employee_epf_cents + slip.apit_tax_cents + slip.unpaid_leave_deductions_cents + slip.other_deductions_cents)}</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="net-box">
+      <div>
+        <div class="net-title">Net Take-Home Salary</div>
+        <div class="net-sub">Remitted directly to employee registered bank account</div>
+      </div>
+      <div class="net-val">${formatLkr(slip.net_salary_cents)}</div>
+    </div>
+
+    <div class="statutory-card">
+      <strong>Corporate Employer Remittance (Non-Deductible from Employee):</strong>
+      <div style="display: flex; justify-content: space-between; margin-top: 6px;">
+        <span>Employer EPF (12%): <strong>${formatLkr(slip.employer_epf_cents)}</strong></span>
+        <span>Employer ETF (3%): <strong>${formatLkr(slip.employer_etf_cents)}</strong></span>
+        <span>Total Remitted to Central Bank: <strong>${formatLkr(slip.employer_epf_cents + slip.employee_epf_cents + slip.employer_etf_cents)}</strong></span>
+      </div>
+    </div>
+
+    <div class="footer-note">
+      <div>This is a computer-generated salary advice slip valid under Sri Lankan labor laws. No physical signature is required.</div>
+      <div>Security Hash: ${slip.id.slice(0, 16)} • Nexus HRMS</div>
+    </div>
+  </div>
+</body>
+</html>`;
   }
 }

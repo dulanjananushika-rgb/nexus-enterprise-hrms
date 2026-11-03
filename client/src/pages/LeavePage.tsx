@@ -10,6 +10,8 @@ import {
   CheckCircle,
   XCircle,
   UserCheck,
+  Paperclip,
+  UploadCloud,
 } from 'lucide-react';
 
 export const LeavePage: React.FC = () => {
@@ -31,6 +33,12 @@ export const LeavePage: React.FC = () => {
     totalDays: 1,
     reason: '',
   });
+  const [attachedFile, setAttachedFile] = useState<{
+    name: string;
+    size: number;
+    type: string;
+    base64: string;
+  } | null>(null);
   const [modalError, setModalError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
@@ -82,13 +90,66 @@ export const LeavePage: React.FC = () => {
     setApplyForm((prev) => ({ ...prev, endDate: val, totalDays: total }));
   };
 
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      alert('File size exceeds the 5MB limit.');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      setAttachedFile({
+        name: file.name,
+        size: file.size,
+        type: file.type || 'application/octet-stream',
+        base64: reader.result as string,
+      });
+    };
+    reader.readAsDataURL(file);
+  };
+
   const handleApplySubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setModalError(null);
     setIsSubmitting(true);
     try {
-      await api.applyLeave(applyForm);
+      const selectedType = leaveTypes.find((t) => t.id === applyForm.leaveTypeId);
+      const isSickLeave =
+        selectedType?.code?.toUpperCase().includes('SICK') ||
+        selectedType?.name?.toUpperCase().includes('SICK');
+
+      if (isSickLeave && applyForm.totalDays >= 2 && !attachedFile) {
+        setModalError('A medical certificate or doctor’s rest slip is mandatory for sick leave of 2 or more days.');
+        setIsSubmitting(false);
+        return;
+      }
+
+      let attachmentName: string | undefined = undefined;
+      let attachmentUrl: string | undefined = undefined;
+
+      if (attachedFile && user?.employeeId) {
+        const doc = await api.uploadDocument({
+          employeeId: user.employeeId,
+          title: `Medical Certificate - ${applyForm.startDate}`,
+          category: 'MEDICAL_SLIP',
+          fileName: attachedFile.name,
+          mimeType: attachedFile.type,
+          base64Data: attachedFile.base64,
+          notes: `Attached to leave request (${applyForm.startDate} to ${applyForm.endDate})`,
+        });
+        attachmentName = attachedFile.name;
+        attachmentUrl = `/api/documents/${doc.id}/download`;
+      }
+
+      await api.applyLeave({
+        ...applyForm,
+        attachmentName,
+        attachmentUrl,
+      });
+
       setIsApplyModalOpen(false);
+      setAttachedFile(null);
       setApplyForm((prev) => ({ ...prev, reason: '', totalDays: 1 }));
       await fetchData();
     } catch (err: unknown) {
@@ -280,8 +341,21 @@ export const LeavePage: React.FC = () => {
                       {app.start_date} <span className="text-slate-400">to</span> {app.end_date}
                     </td>
                     <td className="py-3 px-4 font-bold text-slate-800">{app.total_days}</td>
-                    <td className="py-3 px-4 text-xs text-slate-500 max-w-xs truncate" title={app.reason}>
-                      {app.reason}
+                    <td className="py-3 px-4 text-xs text-slate-500 max-w-xs" title={app.reason}>
+                      <div className="truncate">{app.reason}</div>
+                      {app.attachment_name && (
+                        <div className="mt-1">
+                          <a
+                            href={app.attachment_url || '#'}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-[10px] font-semibold text-indigo-600 bg-indigo-50 border border-indigo-200/80 px-2 py-0.5 rounded-full hover:bg-indigo-100 transition"
+                          >
+                            <Paperclip className="w-2.5 h-2.5" />
+                            <span className="truncate max-w-[140px]">{app.attachment_name}</span>
+                          </a>
+                        </div>
+                      )}
                     </td>
                     <td className="py-3 px-4">
                       <Badge status={app.status} />
@@ -379,6 +453,59 @@ export const LeavePage: React.FC = () => {
               onChange={(e) => setApplyForm({ ...applyForm, reason: e.target.value })}
               className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2 text-xs text-slate-800"
             />
+          </div>
+
+          {/* Medical Certificate / Attachment Box */}
+          <div className="border border-slate-200 bg-slate-50/60 rounded-xl p-3 space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                <Paperclip className="w-3.5 h-3.5 text-indigo-500" />
+                Supporting Document / Medical Slip
+                {(() => {
+                  const selectedType = leaveTypes.find((t) => t.id === applyForm.leaveTypeId);
+                  const isSick =
+                    selectedType?.code?.toUpperCase().includes('SICK') ||
+                    selectedType?.name?.toUpperCase().includes('SICK');
+                  if (isSick && applyForm.totalDays >= 2) {
+                    return (
+                      <span className="text-[10px] text-amber-700 bg-amber-100 font-semibold px-2 py-0.5 rounded-full">
+                        Required (2+ days sick)
+                      </span>
+                    );
+                  }
+                  return <span className="text-[10px] text-slate-400 font-normal">(Optional)</span>;
+                })()}
+              </label>
+              {attachedFile && (
+                <button
+                  type="button"
+                  onClick={() => setAttachedFile(null)}
+                  className="text-[11px] text-rose-600 hover:underline font-semibold"
+                >
+                  Remove
+                </button>
+              )}
+            </div>
+
+            {attachedFile ? (
+              <div className="flex items-center justify-between bg-white border border-slate-200 px-3 py-2 rounded-lg text-xs">
+                <span className="font-medium text-slate-700 truncate max-w-[240px]">{attachedFile.name}</span>
+                <span className="text-slate-400 font-mono text-[11px]">
+                  {(attachedFile.size / 1024).toFixed(0)} KB
+                </span>
+              </div>
+            ) : (
+              <label className="flex items-center justify-center gap-2 p-2.5 border border-dashed border-slate-300 rounded-lg hover:border-indigo-400 hover:bg-indigo-50/20 cursor-pointer transition text-xs text-slate-500">
+                <UploadCloud className="w-4 h-4 text-slate-400" />
+                <span>Upload PDF or scan image (max 5MB)</span>
+                <input
+                  type="file"
+                  accept=".pdf,image/png,image/jpeg,image/webp"
+                  onChange={handleFileSelect}
+                  className="hidden"
+                />
+              </label>
+            )}
           </div>
 
           <div className="flex justify-end space-x-2 pt-3 border-t border-slate-100">

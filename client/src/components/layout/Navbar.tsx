@@ -1,8 +1,20 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { api } from '../../api/client';
-import { Attendance } from '../../types';
-import { LogOut, Clock, User as UserIcon, CheckCircle, KeyRound, PhoneCall } from 'lucide-react';
+import { Attendance, AppNotification } from '../../types';
+import {
+  LogOut,
+  Clock,
+  CheckCircle,
+  KeyRound,
+  PhoneCall,
+  Bell,
+  ChevronDown,
+  CalendarDays,
+  Receipt,
+  ShieldAlert,
+  CheckCheck,
+} from 'lucide-react';
 import { Modal } from '../common/Modal';
 
 export const Navbar: React.FC = () => {
@@ -11,6 +23,14 @@ export const Navbar: React.FC = () => {
   const [todayAttendance, setTodayAttendance] = useState<Attendance | null>(null);
   const [loadingPunch, setLoadingPunch] = useState<boolean>(false);
   const [punchMsg, setPunchMsg] = useState<string | null>(null);
+
+  // Dropdown States
+  const [showUserMenu, setShowUserMenu] = useState<boolean>(false);
+  const [showNotifMenu, setShowNotifMenu] = useState<boolean>(false);
+
+  // Notifications State
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const [unreadCount, setUnreadCount] = useState<number>(0);
 
   // Change Password Modal
   const [showPasswordModal, setShowPasswordModal] = useState<boolean>(false);
@@ -28,6 +48,9 @@ export const Navbar: React.FC = () => {
   const [profileMsg, setProfileMsg] = useState<{ text: string; error: boolean } | null>(null);
   const [isSubmittingProfile, setIsSubmittingProfile] = useState<boolean>(false);
 
+  const notifRef = useRef<HTMLDivElement>(null);
+  const userMenuRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     const update = () => setTime(new Date().toLocaleTimeString());
     update();
@@ -35,6 +58,7 @@ export const Navbar: React.FC = () => {
     return () => clearInterval(interval);
   }, []);
 
+  // Fetch Attendance
   const fetchAttendance = async () => {
     try {
       const data = await api.getTodayAttendance();
@@ -44,11 +68,45 @@ export const Navbar: React.FC = () => {
     }
   };
 
+  // Fetch Notifications
+  const fetchNotifications = async () => {
+    if (!user) return;
+    try {
+      const data = await api.getNotifications();
+      setNotifications(data.notifications);
+      setUnreadCount(data.unreadCount);
+    } catch (err) {
+      console.error('Failed to fetch notifications', err);
+    }
+  };
+
+  useEffect(() => {
+    if (user) {
+      fetchNotifications();
+      const interval = setInterval(fetchNotifications, 30000); // 30s background poll
+      return () => clearInterval(interval);
+    }
+  }, [user]);
+
   useEffect(() => {
     if (user?.employeeId) {
       fetchAttendance();
     }
   }, [user]);
+
+  // Click outside listener for dropdowns
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (notifRef.current && !notifRef.current.contains(e.target as Node)) {
+        setShowNotifMenu(false);
+      }
+      if (userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) {
+        setShowUserMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const handleQuickClockIn = async () => {
     setLoadingPunch(true);
@@ -80,7 +138,32 @@ export const Navbar: React.FC = () => {
     }
   };
 
+  const handleMarkAllRead = async () => {
+    try {
+      await api.markAllNotificationsRead();
+      setNotifications((prev) => prev.map((n) => ({ ...n, is_read: 1 })));
+      setUnreadCount(0);
+    } catch (err) {
+      console.error('Failed to mark all as read', err);
+    }
+  };
+
+  const handleNotificationClick = async (notif: AppNotification) => {
+    if (notif.is_read === 0) {
+      try {
+        await api.markNotificationRead(notif.id);
+        setNotifications((prev) =>
+          prev.map((n) => (n.id === notif.id ? { ...n, is_read: 1 } : n))
+        );
+        setUnreadCount((c) => Math.max(0, c - 1));
+      } catch (err) {
+        console.error(err);
+      }
+    }
+  };
+
   const openProfileModal = async () => {
+    setShowUserMenu(false);
     setProfileMsg(null);
     setShowProfileModal(true);
     try {
@@ -163,27 +246,48 @@ export const Navbar: React.FC = () => {
     }
   };
 
+  const getNotifIcon = (type: string) => {
+    switch (type) {
+      case 'LEAVE':
+        return <CalendarDays className="w-4 h-4 text-indigo-500" />;
+      case 'PAYROLL':
+        return <Receipt className="w-4 h-4 text-emerald-500" />;
+      case 'ATTENDANCE':
+        return <Clock className="w-4 h-4 text-amber-500" />;
+      default:
+        return <ShieldAlert className="w-4 h-4 text-purple-500" />;
+    }
+  };
+
   return (
     <>
       <header className="h-16 bg-white border-b border-slate-200 px-6 flex items-center justify-between sticky top-0 z-30 shadow-sm">
+        {/* Left: Brand & Local Clock */}
         <div className="flex items-center space-x-4">
-          <div className="flex items-center space-x-2">
-            <div className="w-9 h-9 rounded-lg bg-indigo-600 flex items-center justify-center text-white font-bold text-lg shadow-sm">
+          <div className="flex items-center space-x-2.5">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-600 to-indigo-500 flex items-center justify-center text-white font-black text-lg shadow-sm">
               N
             </div>
-            <span className="font-bold text-xl tracking-tight text-slate-900">
-              NEXUS <span className="text-indigo-600 font-extrabold">HRMS</span>
-            </span>
+            <div className="flex items-center space-x-1.5">
+              <span className="font-extrabold text-xl tracking-tight text-slate-900">
+                NEXUS
+              </span>
+              <span className="text-[10px] font-black tracking-widest uppercase bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded border border-indigo-100">
+                HRMS
+              </span>
+            </div>
           </div>
-          <div className="hidden md:flex items-center space-x-2 text-xs text-slate-500 bg-slate-100 px-3 py-1.5 rounded-full border border-slate-200">
+
+          <div className="hidden lg:flex items-center space-x-2 text-xs text-slate-500 bg-slate-50 px-3 py-1.5 rounded-full border border-slate-200">
             <Clock className="w-3.5 h-3.5 text-indigo-500" />
-            <span className="font-mono font-medium">{time}</span>
+            <span className="font-mono font-medium text-slate-700">{time}</span>
             <span className="text-slate-300">|</span>
-            <span>Colombo (GMT+5:30)</span>
+            <span className="text-slate-500 text-[11px]">Colombo (GMT+5:30)</span>
           </div>
         </div>
 
-        <div className="flex items-center space-x-4">
+        {/* Right Controls */}
+        <div className="flex items-center space-x-3">
           {/* Quick Punch Control */}
           {user?.employeeId && (
             <div className="hidden sm:flex items-center space-x-2">
@@ -191,7 +295,7 @@ export const Navbar: React.FC = () => {
                 <button
                   onClick={handleQuickClockIn}
                   disabled={loadingPunch}
-                  className="inline-flex items-center space-x-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-3 py-1.5 rounded-md shadow-sm transition disabled:opacity-50"
+                  className="inline-flex items-center space-x-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg shadow-sm transition disabled:opacity-50"
                 >
                   <CheckCircle className="w-3.5 h-3.5" />
                   <span>Clock In</span>
@@ -200,71 +304,174 @@ export const Navbar: React.FC = () => {
                 <button
                   onClick={handleQuickClockOut}
                   disabled={loadingPunch}
-                  className="inline-flex items-center space-x-1.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold px-3 py-1.5 rounded-md shadow-sm transition disabled:opacity-50"
+                  className="inline-flex items-center space-x-1.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg shadow-sm transition disabled:opacity-50"
                 >
                   <Clock className="w-3.5 h-3.5" />
                   <span>Clock Out</span>
                 </button>
               ) : (
-                <span className="text-xs text-slate-500 bg-slate-100 px-2.5 py-1 rounded border border-slate-200">
+                <span className="text-xs font-medium text-slate-500 bg-slate-100 px-2.5 py-1 rounded-md border border-slate-200">
                   Shift Completed
                 </span>
               )}
               {punchMsg && (
-                <span className="text-xs text-indigo-600 font-medium animate-pulse">
+                <span className="text-xs text-indigo-600 font-semibold animate-pulse">
                   {punchMsg}
                 </span>
               )}
             </div>
           )}
 
-          {/* User Role & Quick Actions */}
-          <div className="flex items-center space-x-3 pl-3 border-l border-slate-200">
-            <div className="text-right hidden sm:block">
-              <div className="text-sm font-semibold text-slate-900 leading-none">
-                {user?.first_name ? `${user.first_name} ${user.last_name}` : user?.email}
-              </div>
-              <div className="mt-1 flex items-center justify-end space-x-1">
-                <span className={`text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded border ${getRoleBadgeColor(user?.role || '')}`}>
-                  {user?.role.replace('_', ' ')}
-                </span>
-              </div>
-            </div>
-
-            {/* Quick Profile / Security Modal Actions */}
-            <div className="flex items-center space-x-1">
-              {user?.employeeId && (
-                <button
-                  onClick={openProfileModal}
-                  title="My Contact Details"
-                  className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition"
-                >
-                  <PhoneCall className="w-4 h-4" />
-                </button>
-              )}
-              <button
-                onClick={() => {
-                  setPasswordMsg(null);
-                  setShowPasswordModal(true);
-                }}
-                title="Change Password"
-                className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition"
-              >
-                <KeyRound className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="w-9 h-9 rounded-full bg-slate-100 border border-slate-300 flex items-center justify-center text-slate-600 font-medium">
-              <UserIcon className="w-4 h-4" />
-            </div>
-
+          {/* Notification Bell Dropdown */}
+          <div className="relative" ref={notifRef}>
             <button
-              onClick={logout}
-              title="Logout"
-              className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition"
+              onClick={() => setShowNotifMenu(!showNotifMenu)}
+              title="Notifications"
+              className="relative p-2 text-slate-500 hover:text-indigo-600 hover:bg-slate-100 rounded-xl transition"
             >
-              <LogOut className="w-4 h-4" />
+              <Bell className="w-4 h-4" />
+              {unreadCount > 0 && (
+                <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-rose-500 rounded-full ring-2 ring-white" />
+              )}
             </button>
+
+            {/* Notification Flyout Drawer */}
+            {showNotifMenu && (
+              <div className="absolute right-0 mt-2 w-80 sm:w-96 bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden z-50 animate-in fade-in slide-in-from-top-2 duration-150">
+                <div className="p-3.5 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
+                  <div className="flex items-center space-x-2">
+                    <span className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                      Notifications
+                    </span>
+                    {unreadCount > 0 && (
+                      <span className="text-[10px] font-bold bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full">
+                        {unreadCount} new
+                      </span>
+                    )}
+                  </div>
+                  {unreadCount > 0 && (
+                    <button
+                      onClick={handleMarkAllRead}
+                      className="inline-flex items-center space-x-1 text-[11px] font-semibold text-indigo-600 hover:text-indigo-800"
+                    >
+                      <CheckCheck className="w-3 h-3" />
+                      <span>Mark all read</span>
+                    </button>
+                  )}
+                </div>
+
+                <div className="max-h-80 overflow-y-auto divide-y divide-slate-100">
+                  {notifications.length === 0 ? (
+                    <div className="p-6 text-center text-xs text-slate-400">
+                      No notifications at this time.
+                    </div>
+                  ) : (
+                    notifications.map((n) => (
+                      <div
+                        key={n.id}
+                        onClick={() => handleNotificationClick(n)}
+                        className={`p-3.5 flex items-start space-x-3 hover:bg-slate-50 transition cursor-pointer ${
+                          n.is_read === 0 ? 'bg-indigo-50/30' : ''
+                        }`}
+                      >
+                        <div className="p-2 rounded-lg bg-white border border-slate-200 shrink-0 shadow-2xs">
+                          {getNotifIcon(n.type)}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-bold text-slate-900 truncate">
+                              {n.title}
+                            </span>
+                            <span className="text-[10px] text-slate-400 whitespace-nowrap ml-2">
+                              {new Date(n.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                          </div>
+                          <p className="text-xs text-slate-600 mt-0.5 line-clamp-2 leading-relaxed">
+                            {n.message}
+                          </p>
+                        </div>
+                        {n.is_read === 0 && (
+                          <span className="w-1.5 h-1.5 rounded-full bg-indigo-600 shrink-0 mt-2" />
+                        )}
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* User Profile Popover Dropdown */}
+          <div className="relative pl-2 border-l border-slate-200" ref={userMenuRef}>
+            <button
+              onClick={() => setShowUserMenu(!showUserMenu)}
+              className="flex items-center space-x-2.5 p-1.5 rounded-xl hover:bg-slate-100 transition"
+            >
+              <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-slate-800 to-indigo-900 border border-slate-300 flex items-center justify-center text-white text-xs font-bold shadow-2xs">
+                {user?.first_name ? user.first_name[0] : (user?.email[0] || 'U').toUpperCase()}
+              </div>
+
+              <div className="text-left hidden md:block">
+                <div className="text-xs font-bold text-slate-900 leading-tight">
+                  {user?.first_name ? `${user.first_name} ${user.last_name}` : user?.email}
+                </div>
+                <div className="text-[10px] font-semibold text-slate-400 capitalize">
+                  {user?.role.toLowerCase().replace('_', ' ')}
+                </div>
+              </div>
+
+              <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+            </button>
+
+            {/* Profile Dropdown Menu */}
+            {showUserMenu && (
+              <div className="absolute right-0 mt-2 w-64 bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden z-50 animate-in fade-in slide-in-from-top-2 duration-150">
+                <div className="p-3.5 bg-slate-50 border-b border-slate-100">
+                  <div className="text-xs font-bold text-slate-900 truncate">
+                    {user?.email}
+                  </div>
+                  <div className="mt-1">
+                    <span className={`text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded border ${getRoleBadgeColor(user?.role || '')}`}>
+                      {user?.role.replace('_', ' ')}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="p-1.5 space-y-0.5 text-xs text-slate-700">
+                  {user?.employeeId && (
+                    <button
+                      onClick={openProfileModal}
+                      className="w-full flex items-center space-x-2.5 px-3 py-2 rounded-lg hover:bg-indigo-50 hover:text-indigo-600 transition text-left"
+                    >
+                      <PhoneCall className="w-3.5 h-3.5 text-slate-400 group-hover:text-indigo-600" />
+                      <span className="font-medium">My Contact Details</span>
+                    </button>
+                  )}
+
+                  <button
+                    onClick={() => {
+                      setShowUserMenu(false);
+                      setPasswordMsg(null);
+                      setShowPasswordModal(true);
+                    }}
+                    className="w-full flex items-center space-x-2.5 px-3 py-2 rounded-lg hover:bg-indigo-50 hover:text-indigo-600 transition text-left"
+                  >
+                    <KeyRound className="w-3.5 h-3.5 text-slate-400 group-hover:text-indigo-600" />
+                    <span className="font-medium">Change Password</span>
+                  </button>
+
+                  <div className="pt-1 border-t border-slate-100 mt-1">
+                    <button
+                      onClick={logout}
+                      className="w-full flex items-center space-x-2.5 px-3 py-2 rounded-lg text-rose-600 hover:bg-rose-50 transition text-left"
+                    >
+                      <LogOut className="w-3.5 h-3.5 text-rose-500" />
+                      <span className="font-semibold">Sign Out</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </header>

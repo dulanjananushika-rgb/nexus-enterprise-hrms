@@ -11,6 +11,9 @@ import {
   AttendanceReportRow,
   LeaveReportRow,
   EpfEtfReport,
+  AppNotification,
+  EmployeeDocument,
+  GratuitySummaryReport,
 } from '../types';
 
 const API_BASE = '/api';
@@ -180,6 +183,8 @@ class ApiClient {
     endDate: string;
     totalDays: number;
     reason: string;
+    attachmentName?: string;
+    attachmentUrl?: string;
   }): Promise<LeaveApplication> {
     return this.request<LeaveApplication>('/leaves/apply', {
       method: 'POST',
@@ -272,9 +277,56 @@ class ApiClient {
     return this.request<EpfEtfReport>(`/reports/epf-etf${query ? `?${query}` : ''}`);
   }
 
+  async getGratuityProvisions(): Promise<GratuitySummaryReport> {
+    return this.request<GratuitySummaryReport>('/reports/gratuity');
+  }
+
+  // Documents Vault
+  async uploadDocument(data: {
+    employeeId: string;
+    title: string;
+    category: string;
+    fileName: string;
+    mimeType: string;
+    base64Data: string;
+    notes?: string;
+  }): Promise<EmployeeDocument> {
+    return this.request<EmployeeDocument>('/documents/upload', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async getEmployeeDocuments(employeeId: string): Promise<EmployeeDocument[]> {
+    return this.request<EmployeeDocument[]>(`/documents/employee/${employeeId}`);
+  }
+
+  async deleteDocument(id: string): Promise<void> {
+    return this.request<void>(`/documents/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
   // Audit
   async getAuditLogs(): Promise<AuditLog[]> {
     return this.request<AuditLog[]>('/audit-logs');
+  }
+
+  // Notifications
+  async getNotifications(): Promise<{ notifications: AppNotification[]; unreadCount: number }> {
+    return this.request<{ notifications: AppNotification[]; unreadCount: number }>('/notifications');
+  }
+
+  async markNotificationRead(id: string): Promise<void> {
+    return this.request<void>(`/notifications/${id}/read`, {
+      method: 'PATCH',
+    });
+  }
+
+  async markAllNotificationsRead(): Promise<void> {
+    return this.request<void>('/notifications/read-all', {
+      method: 'POST',
+    });
   }
 }
 

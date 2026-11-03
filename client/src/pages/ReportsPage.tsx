@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../api/client';
-import { AttendanceReportRow, LeaveReportRow, EpfEtfReport } from '../types';
+import { AttendanceReportRow, LeaveReportRow, EpfEtfReport, GratuitySummaryReport } from '../types';
 import { useAuth } from '../context/AuthContext';
 import {
   BarChart3,
@@ -9,11 +9,12 @@ import {
   Receipt,
   Download,
   Filter,
+  Landmark,
 } from 'lucide-react';
 
 export const ReportsPage: React.FC = () => {
   const { user } = useAuth();
-  const [activeTab, setActiveTab] = useState<'attendance' | 'leaves' | 'epf'>('attendance');
+  const [activeTab, setActiveTab] = useState<'attendance' | 'leaves' | 'epf' | 'gratuity'>('attendance');
   const [departments, setDepartments] = useState<Array<{ id: string; name: string }>>([]);
   const [loading, setLoading] = useState<boolean>(false);
 
@@ -30,6 +31,9 @@ export const ReportsPage: React.FC = () => {
   // EPF/ETF State
   const [epfMonth, setEpfMonth] = useState<string>(new Date().toISOString().slice(0, 7));
   const [epfReport, setEpfReport] = useState<EpfEtfReport | null>(null);
+
+  // Gratuity Provisions State
+  const [gratuityReport, setGratuityReport] = useState<GratuitySummaryReport | null>(null);
 
   useEffect(() => {
     api.getDepartments().then(setDepartments).catch(console.error);
@@ -80,10 +84,24 @@ export const ReportsPage: React.FC = () => {
     }
   };
 
+  const fetchGratuityReport = async () => {
+    setLoading(true);
+    try {
+      const data = await api.getGratuityProvisions();
+      setGratuityReport(data);
+    } catch (err) {
+      console.error('Failed to fetch gratuity report', err);
+      setGratuityReport(null);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (activeTab === 'attendance') fetchAttendanceReport();
     if (activeTab === 'leaves') fetchLeaveReport();
     if (activeTab === 'epf') fetchEpfReport();
+    if (activeTab === 'gratuity') fetchGratuityReport();
   }, [activeTab]);
 
   const triggerDownload = (url: string, filename: string) => {
@@ -148,17 +166,31 @@ export const ReportsPage: React.FC = () => {
         </button>
 
         {(user?.role === 'SUPER_ADMIN' || user?.role === 'HR_MANAGER') && (
-          <button
-            onClick={() => setActiveTab('epf')}
-            className={`flex items-center space-x-2 pb-3 px-1 text-sm font-semibold border-b-2 transition ${
-              activeTab === 'epf'
-                ? 'border-indigo-600 text-indigo-600'
-                : 'border-transparent text-slate-500 hover:text-slate-800'
-            }`}
-          >
-            <Receipt className="w-4 h-4" />
-            <span>Statutory EPF & ETF Remittance</span>
-          </button>
+          <>
+            <button
+              onClick={() => setActiveTab('epf')}
+              className={`flex items-center space-x-2 pb-3 px-1 text-sm font-semibold border-b-2 transition ${
+                activeTab === 'epf'
+                  ? 'border-indigo-600 text-indigo-600'
+                  : 'border-transparent text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              <Receipt className="w-4 h-4" />
+              <span>Statutory EPF & ETF Remittance</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('gratuity')}
+              className={`flex items-center space-x-2 pb-3 px-1 text-sm font-semibold border-b-2 transition ${
+                activeTab === 'gratuity'
+                  ? 'border-indigo-600 text-indigo-600'
+                  : 'border-transparent text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              <Landmark className="w-4 h-4" />
+              <span>Gratuity Provisions (Act No. 12)</span>
+            </button>
+          </>
         )}
       </div>
 
@@ -504,6 +536,146 @@ export const ReportsPage: React.FC = () => {
                         </td>
                         <td className="py-3 px-4 text-right font-mono font-black text-emerald-700">
                           {formatLkr(r.totalRemittanceCents)}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 4. SRI LANKA STATUTORY GRATUITY PROVISIONS (ACT NO. 12 OF 1983) */}
+      {activeTab === 'gratuity' && (
+        <div className="space-y-4">
+          {/* Action Bar */}
+          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2">
+                <Landmark className="w-4 h-4 text-indigo-600" />
+                <span>Payment of Gratuity Act No. 12 of 1983 & LKAS 19 Employee Benefits</span>
+              </h3>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Statutory gratuity vests at 5 completed years of service at half month's basic salary per completed year.
+              </p>
+            </div>
+
+            <button
+              onClick={() => triggerDownload('/api/reports/gratuity/csv', 'gratuity_provisions.csv')}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-xs font-semibold shadow-sm transition flex items-center space-x-1.5"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>Export Gratuity Schedule CSV</span>
+            </button>
+          </div>
+
+          {/* Stat Cards */}
+          {gratuityReport && (
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                <span className="text-xs font-bold uppercase text-slate-400 block">Total Active Headcount</span>
+                <span className="text-2xl font-black text-slate-800 font-mono mt-1 block">
+                  {gratuityReport.totals.totalEmployees}
+                </span>
+                <span className="text-[11px] text-slate-500 mt-1 block">
+                  Avg Tenure: {gratuityReport.totals.averageTenureYears} Years
+                </span>
+              </div>
+
+              <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                <span className="text-xs font-bold uppercase text-slate-400 block">Vested Staff (&ge; 5 Years)</span>
+                <span className="text-2xl font-black text-emerald-600 font-mono mt-1 block">
+                  {gratuityReport.totals.vestedEmployees}
+                </span>
+                <span className="text-[11px] text-slate-500 mt-1 block">
+                  Unvested (&lt; 5 Yrs): {gratuityReport.totals.unvestedEmployees}
+                </span>
+              </div>
+
+              <div className="bg-indigo-50/50 p-4 rounded-xl border border-indigo-100 shadow-sm">
+                <span className="text-xs font-bold uppercase text-indigo-900 block">Statutory Gratuity Liability</span>
+                <span className="text-xl font-black text-indigo-700 font-mono mt-1 block">
+                  {formatLkr(gratuityReport.totals.totalStatutoryLiabilityCents)}
+                </span>
+                <span className="text-[10px] text-indigo-600 font-semibold mt-1 block">
+                  Vested legal obligation under Act No. 12
+                </span>
+              </div>
+
+              <div className="bg-purple-50/50 p-4 rounded-xl border border-purple-100 shadow-sm">
+                <span className="text-xs font-bold uppercase text-purple-900 block">Total LKAS 19 Reserve</span>
+                <span className="text-xl font-black text-purple-700 font-mono mt-1 block">
+                  {formatLkr(gratuityReport.totals.totalLkas19ReserveCents)}
+                </span>
+                <span className="text-[10px] text-purple-600 font-semibold mt-1 block">
+                  Comprehensive accounting provision
+                </span>
+              </div>
+            </div>
+          )}
+
+          {/* Gratuity Table */}
+          <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm text-slate-600">
+                <thead className="bg-slate-50/75 border-b border-slate-200 text-xs font-semibold uppercase tracking-wider text-slate-500">
+                  <tr>
+                    <th className="py-3 px-4">Employee</th>
+                    <th className="py-3 px-4">Department</th>
+                    <th className="py-3 px-4">Hire Date</th>
+                    <th className="py-3 px-4 text-center">Tenure</th>
+                    <th className="py-3 px-4 text-center">Vesting Status</th>
+                    <th className="py-3 px-4 text-right">Basic Monthly Salary</th>
+                    <th className="py-3 px-4 text-right">Statutory Liability</th>
+                    <th className="py-3 px-4 text-right">LKAS 19 Reserve</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {loading ? (
+                    <tr>
+                      <td colSpan={8} className="text-center py-8 text-slate-400">
+                        Calculating corporate gratuity liability...
+                      </td>
+                    </tr>
+                  ) : !gratuityReport || gratuityReport.records.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} className="text-center py-8 text-slate-400">
+                        No active employees found to evaluate gratuity.
+                      </td>
+                    </tr>
+                  ) : (
+                    gratuityReport.records.map((r) => (
+                      <tr key={r.employeeId} className="hover:bg-slate-50/50">
+                        <td className="py-3 px-4">
+                          <div className="font-bold text-slate-900">{r.fullName}</div>
+                          <div className="text-xs text-slate-400 font-mono">{r.employeeCode}</div>
+                        </td>
+                        <td className="py-3 px-4 text-xs font-medium text-slate-700">{r.departmentName}</td>
+                        <td className="py-3 px-4 text-xs font-mono text-slate-600">{r.hireDate}</td>
+                        <td className="py-3 px-4 text-center text-xs font-mono font-semibold text-slate-800">
+                          {r.yearsOfService} yrs
+                        </td>
+                        <td className="py-3 px-4 text-center">
+                          {r.isVested ? (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                              Vested (&ge; 5 Yrs)
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 text-slate-600">
+                              Unvested (&lt; 5 Yrs)
+                            </span>
+                          )}
+                        </td>
+                        <td className="py-3 px-4 text-right font-mono font-medium text-slate-900">
+                          {formatLkr(r.baseSalaryCents)}
+                        </td>
+                        <td className="py-3 px-4 text-right font-mono font-bold text-indigo-700">
+                          {formatLkr(r.statutoryGratuityLiabilityCents)}
+                        </td>
+                        <td className="py-3 px-4 text-right font-mono font-semibold text-purple-700">
+                          {formatLkr(r.accruedLkas19ReserveCents)}
                         </td>
                       </tr>
                     ))

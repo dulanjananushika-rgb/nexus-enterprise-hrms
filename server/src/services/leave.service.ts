@@ -2,6 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { db } from '../db/database.js';
 import { LeaveApplicationRow, LeaveBalanceRow, EmployeeRow } from '../types/index.js';
 import { AuditService } from './audit.service.js';
+import { NotificationService } from './notification.service.js';
 
 export class LeaveService {
   public static apply(data: {
@@ -11,6 +12,8 @@ export class LeaveService {
     endDate: string;
     totalDays?: number;
     reason: string;
+    attachmentName?: string;
+    attachmentUrl?: string;
   }): LeaveApplicationRow {
     if (new Date(data.startDate) > new Date(data.endDate)) {
       throw new Error('Start date cannot be after end date.');
@@ -78,8 +81,8 @@ export class LeaveService {
       const applicationId = uuidv4();
       db.prepare(`
         INSERT INTO leave_applications (
-          id, employee_id, leave_type_id, start_date, end_date, total_days, reason, status
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, 'PENDING')
+          id, employee_id, leave_type_id, start_date, end_date, total_days, reason, attachment_name, attachment_url, status
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING')
       `).run(
         applicationId,
         data.employeeId,
@@ -87,7 +90,9 @@ export class LeaveService {
         data.startDate,
         data.endDate,
         totalDays,
-        data.reason
+        data.reason,
+        data.attachmentName ?? null,
+        data.attachmentUrl ?? null
       );
 
       db.exec('COMMIT;');
@@ -97,6 +102,13 @@ export class LeaveService {
         entityType: 'LEAVE',
         entityId: applicationId,
         newValue: data,
+      });
+
+      NotificationService.notifyRole('HR_MANAGER', {
+        title: 'New Leave Application',
+        message: `A leave request of ${totalDays} day(s) starting ${data.startDate} was submitted for review.`,
+        type: 'LEAVE',
+        link: 'leaves',
       });
 
       return this.getById(applicationId)!;
@@ -194,6 +206,20 @@ export class LeaveService {
         newValue: { decision: params.decision, reviewerRole: params.reviewerRole },
       });
 
+      const applicantEmp = db.prepare('SELECT user_id FROM employees WHERE id = ?').get(app.employee_id) as
+        | { user_id: string }
+        | undefined;
+
+      if (applicantEmp) {
+        NotificationService.create({
+          userId: applicantEmp.user_id,
+          title: params.decision === 'APPROVE' ? 'Leave Request Approved' : 'Leave Request Rejected',
+          message: `Your leave request for ${app.start_date} to ${app.end_date} was ${params.decision === 'APPROVE' ? 'authorized' : 'rejected'}.`,
+          type: 'LEAVE',
+          link: 'leaves',
+        });
+      }
+
       return this.getById(params.applicationId)!;
     } catch (err) {
       db.exec('ROLLBACK;');
@@ -259,6 +285,13 @@ export class LeaveService {
         entityType: 'LEAVE',
         entityId: params.applicationId,
         newValue: { refundedDays: app.total_days },
+      });
+
+      NotificationService.notifyRole('HR_MANAGER', {
+        title: 'Leave Request Cancelled',
+        message: `Leave application for ${app.employee_name || 'employee'} (${app.start_date}) was cancelled and balance refunded.`,
+        type: 'LEAVE',
+        link: 'leaves',
       });
 
       return this.getById(params.applicationId)!;

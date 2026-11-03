@@ -2,6 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { db } from '../db/database.js';
 import { AttendanceRow } from '../types/index.js';
 import { AuditService } from './audit.service.js';
+import { NotificationService } from './notification.service.js';
 
 export class AttendanceService {
   /**
@@ -204,6 +205,20 @@ export class AttendanceService {
         totalWorkedMinutes: totalMinutes,
       },
     });
+
+    const empUser = db.prepare('SELECT user_id FROM employees WHERE id = ?').get(params.employeeId) as
+      | { user_id: string }
+      | undefined;
+
+    if (empUser) {
+      NotificationService.create({
+        userId: empUser.user_id,
+        title: 'Attendance Regularized',
+        message: `Shift record for ${params.date} was administratively set to ${params.status}.`,
+        type: 'ATTENDANCE',
+        link: 'attendance',
+      });
+    }
 
     return this.getById(targetId!)!;
   }

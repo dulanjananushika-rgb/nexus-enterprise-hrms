@@ -16,6 +16,21 @@ export function initializeDatabase(): void {
 
   console.log('[DB] Executing schema DDL migrations...');
   db.exec(schemaSql);
+
+  // Safe incremental column additions for existing installations
+  try {
+    const leaveCols = db.prepare("PRAGMA table_info(leave_applications);").all() as Array<{ name: string }>;
+    const colNames = leaveCols.map((c) => c.name);
+    if (!colNames.includes('attachment_name')) {
+      db.exec("ALTER TABLE leave_applications ADD COLUMN attachment_name TEXT;");
+    }
+    if (!colNames.includes('attachment_url')) {
+      db.exec("ALTER TABLE leave_applications ADD COLUMN attachment_url TEXT;");
+    }
+  } catch (migErr) {
+    console.warn('[DB Migration Warning]', migErr);
+  }
+
   console.log('[DB] Schema initialized successfully with tables and indexes.');
 }
 

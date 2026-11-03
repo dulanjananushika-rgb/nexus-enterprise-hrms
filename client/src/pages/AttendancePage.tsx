@@ -12,6 +12,8 @@ import {
   Building,
   AlertCircle,
   FileEdit,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 
 export const AttendancePage: React.FC = () => {
@@ -28,6 +30,11 @@ export const AttendancePage: React.FC = () => {
   // Regularization Modal State
   const [isRegModalOpen, setIsRegModalOpen] = useState<boolean>(false);
   const [employeeOptions, setEmployeeOptions] = useState<Employee[]>([]);
+  const [allEmployees, setAllEmployees] = useState<Employee[]>([]);
+  const [pageTab, setPageTab] = useState<'LOGS' | 'ROSTER'>('LOGS');
+  const [weekOffset, setWeekOffset] = useState<number>(0);
+  const [rosterDept, setRosterDept] = useState<string>('');
+  const [departments, setDepartments] = useState<Array<{ id: string; name: string }>>([]);
   const [regForm, setRegForm] = useState({
     employeeId: '',
     date: new Date().toISOString().split('T')[0],
@@ -44,15 +51,49 @@ export const AttendancePage: React.FC = () => {
     user?.role === 'SUPER_ADMIN' || user?.role === 'HR_MANAGER' || user?.role === 'LINE_MANAGER';
 
   useEffect(() => {
-    if (canRegularize) {
-      api.getEmployees().then((emps) => {
-        setEmployeeOptions(emps);
-        if (emps.length > 0 && !regForm.employeeId) {
-          setRegForm((prev) => ({ ...prev, employeeId: emps[0].id }));
-        }
-      }).catch(console.error);
+    api.getEmployees().then((emps) => {
+      setAllEmployees(emps);
+      setEmployeeOptions(emps);
+      if (emps.length > 0 && !regForm.employeeId) {
+        setRegForm((prev) => ({ ...prev, employeeId: emps[0].id }));
+      }
+    }).catch(console.error);
+
+    api.getDepartments().then(setDepartments).catch(console.error);
+  }, []);
+
+  const getWeekDates = (offset: number) => {
+    const now = new Date();
+    const day = now.getDay();
+    const diffToMon = day === 0 ? -6 : 1 - day;
+    const monday = new Date(now);
+    monday.setDate(now.getDate() + diffToMon + offset * 7);
+
+    const days = [];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(monday);
+      d.setDate(monday.getDate() + i);
+      days.push(d);
     }
-  }, [user]);
+    return days;
+  };
+
+  const weekDays = getWeekDates(weekOffset);
+  const todayStr = new Date().toISOString().split('T')[0];
+
+  const getShiftForDay = (emp: Employee, d: Date) => {
+    const dayIndex = d.getDay(); // 0 Sun, 6 Sat
+    if (dayIndex === 0 || dayIndex === 6) {
+      return { type: 'OFF', label: 'Off Day', times: 'Weekend', badgeClass: 'bg-slate-100 text-slate-500 border-slate-200' };
+    }
+    const charCode = emp.employee_code.charCodeAt(emp.employee_code.length - 1) || 0;
+    if (charCode % 5 === 0) {
+      return { type: 'MORNING', label: 'Morning', times: '06:00 – 14:30', badgeClass: 'bg-amber-50 text-amber-700 border-amber-200' };
+    } else if (charCode % 5 === 1) {
+      return { type: 'EVENING', label: 'Evening', times: '14:00 – 22:30', badgeClass: 'bg-teal-50 text-teal-700 border-teal-200' };
+    }
+    return { type: 'GENERAL', label: 'General', times: '08:30 – 17:00', badgeClass: 'bg-indigo-50 text-indigo-700 border-indigo-200' };
+  };
 
   const fetchTodayStatus = async () => {
     if (!user?.employeeId) return;
@@ -157,7 +198,36 @@ export const AttendancePage: React.FC = () => {
         </p>
       </div>
 
-      {/* Clock-in / Out Banner for logged in employee */}
+      {/* View Switcher: Daily Terminal vs Weekly Roster */}
+      <div className="flex border-b border-slate-200 space-x-6">
+        <button
+          onClick={() => setPageTab('LOGS')}
+          className={`flex items-center space-x-2 pb-3 px-1 text-sm font-semibold border-b-2 transition ${
+            pageTab === 'LOGS'
+              ? 'border-indigo-600 text-indigo-600'
+              : 'border-transparent text-slate-500 hover:text-slate-800'
+          }`}
+        >
+          <Clock className="w-4 h-4" />
+          <span>Daily Punch & Work Logs</span>
+        </button>
+
+        <button
+          onClick={() => setPageTab('ROSTER')}
+          className={`flex items-center space-x-2 pb-3 px-1 text-sm font-semibold border-b-2 transition ${
+            pageTab === 'ROSTER'
+              ? 'border-indigo-600 text-indigo-600'
+              : 'border-transparent text-slate-500 hover:text-slate-800'
+          }`}
+        >
+          <Calendar className="w-4 h-4" />
+          <span>Team Weekly Shift Roster</span>
+        </button>
+      </div>
+
+      {pageTab === 'LOGS' ? (
+        <>
+          {/* Clock-in / Out Banner for logged in employee */}
       {user?.employeeId && (
         <div className="bg-gradient-to-r from-slate-900 to-indigo-950 text-white p-6 rounded-2xl shadow-lg border border-slate-800 flex flex-col md:flex-row items-center justify-between gap-6">
           <div className="space-y-2">
@@ -356,6 +426,150 @@ export const AttendancePage: React.FC = () => {
           </table>
         </div>
       </div>
+      </>
+      ) : (
+        /* Team Weekly Shift Roster View */
+        <div className="space-y-4">
+          {/* Roster Controls */}
+          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-4">
+            <div className="flex items-center space-x-3">
+              <div className="flex items-center space-x-1 border border-slate-200 rounded-lg p-1 bg-slate-50">
+                <button
+                  type="button"
+                  onClick={() => setWeekOffset((prev) => prev - 1)}
+                  className="p-1 text-slate-600 hover:text-slate-900 hover:bg-white rounded transition"
+                  title="Previous Week"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setWeekOffset(0)}
+                  className="px-2 py-0.5 text-xs font-semibold text-slate-700 hover:bg-white rounded transition"
+                >
+                  Current Week
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setWeekOffset((prev) => prev + 1)}
+                  className="p-1 text-slate-600 hover:text-slate-900 hover:bg-white rounded transition"
+                  title="Next Week"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+
+              <span className="text-xs font-bold text-slate-800">
+                {weekDays[0].toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} –{' '}
+                {weekDays[6].toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+              </span>
+            </div>
+
+            {/* Department Filter & Legend */}
+            <div className="flex flex-wrap items-center gap-4">
+              <select
+                value={rosterDept}
+                onChange={(e) => setRosterDept(e.target.value)}
+                className="bg-slate-50 border border-slate-300 rounded-lg px-3 py-1.5 text-xs text-slate-700 font-medium focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+              >
+                <option value="">All Departments</option>
+                {departments.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.name}
+                  </option>
+                ))}
+              </select>
+
+              <div className="hidden lg:flex items-center space-x-2 text-[11px] text-slate-500">
+                <span className="inline-flex items-center gap-1">
+                  <span className="w-2.5 h-2.5 rounded-full bg-indigo-500"></span> General (08:30-17:00)
+                </span>
+                <span className="inline-flex items-center gap-1">
+                  <span className="w-2.5 h-2.5 rounded-full bg-amber-500"></span> Morning (06:00-14:30)
+                </span>
+                <span className="inline-flex items-center gap-1">
+                  <span className="w-2.5 h-2.5 rounded-full bg-teal-500"></span> Evening (14:00-22:30)
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Roster Calendar Matrix */}
+          <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead className="bg-slate-50/90 border-b border-slate-200 uppercase tracking-wider text-slate-600">
+                  <tr>
+                    <th className="py-3 px-4 font-bold text-slate-700 min-w-[200px]">Team Member</th>
+                    {weekDays.map((d) => {
+                      const dateISO = d.toISOString().split('T')[0];
+                      const isToday = dateISO === todayStr;
+                      const dayName = d.toLocaleDateString('en-US', { weekday: 'short' });
+                      const dayNum = d.toLocaleDateString('en-US', { day: '2-digit' });
+
+                      return (
+                        <th
+                          key={dateISO}
+                          className={`py-3 px-3 text-center min-w-[120px] ${
+                            isToday ? 'bg-indigo-50/70 border-x border-indigo-200 text-indigo-900 font-extrabold' : ''
+                          }`}
+                        >
+                          <div>{dayName}</div>
+                          <div className={`text-sm ${isToday ? 'text-indigo-600' : 'text-slate-900'}`}>{dayNum}</div>
+                          {isToday && (
+                            <span className="inline-block mt-0.5 px-1.5 py-0.2 bg-indigo-600 text-white rounded text-[9px] font-bold">
+                              TODAY
+                            </span>
+                          )}
+                        </th>
+                      );
+                    })}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {allEmployees
+                    .filter((e) => !rosterDept || e.department_id === rosterDept)
+                    .map((emp) => (
+                      <tr key={emp.id} className="hover:bg-slate-50/40">
+                        <td className="py-3 px-4 border-r border-slate-100 bg-white">
+                          <div className="font-bold text-slate-900">
+                            {emp.first_name} {emp.last_name}
+                          </div>
+                          <div className="text-[11px] text-slate-400 font-mono">
+                            {emp.employee_code} • {emp.department_name}
+                          </div>
+                        </td>
+
+                        {weekDays.map((d) => {
+                          const dateISO = d.toISOString().split('T')[0];
+                          const isToday = dateISO === todayStr;
+                          const shift = getShiftForDay(emp, d);
+
+                          return (
+                            <td
+                              key={dateISO}
+                              className={`py-3 px-2 text-center align-middle ${
+                                isToday ? 'bg-indigo-50/20 border-x border-indigo-100' : ''
+                              }`}
+                            >
+                              <div
+                                className={`p-1.5 rounded-lg border text-[11px] font-semibold transition ${shift.badgeClass}`}
+                                title={`${shift.label} Shift (${shift.times})`}
+                              >
+                                <div className="font-bold">{shift.label}</div>
+                                <div className="text-[10px] font-mono opacity-80 mt-0.5">{shift.times}</div>
+                              </div>
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Attendance Regularization Modal */}
       <Modal

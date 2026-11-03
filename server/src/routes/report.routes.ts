@@ -218,4 +218,29 @@ router.get('/epf-etf/csv', authenticate, requireRole('SUPER_ADMIN', 'HR_MANAGER'
   }
 });
 
+// 4. Sri Lanka Statutory Gratuity Provisions (Payment of Gratuity Act No. 12 of 1983)
+router.get('/gratuity', authenticate, requireRole('SUPER_ADMIN', 'HR_MANAGER'), (_req: AuthenticatedRequest, res: Response) => {
+  try {
+    const data = ReportService.getGratuityProvisions();
+    res.json({ success: true, data });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Failed to generate gratuity report.';
+    res.status(500).json({ success: false, error: { code: 'REPORT_FAILED', message } });
+  }
+});
+
+router.get('/gratuity/csv', authenticate, requireRole('SUPER_ADMIN', 'HR_MANAGER'), (_req: AuthenticatedRequest, res: Response) => {
+  try {
+    const csv = ReportService.exportGratuityCsv();
+    const filename = `gratuity_provisions_${new Date().toISOString().split('T')[0]}.csv`;
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.status(200).send(csv);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Failed to export Gratuity CSV.';
+    res.status(500).json({ success: false, error: { code: 'EXPORT_FAILED', message } });
+  }
+});
+
 export default router;

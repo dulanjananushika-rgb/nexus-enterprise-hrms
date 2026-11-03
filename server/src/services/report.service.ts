@@ -1,4 +1,5 @@
 import { db } from '../db/database.js';
+import { GratuitySummaryReport, GratuityProvisionRow } from '../types/index.js';
 
 export interface AttendanceSummaryRow {
   employeeId: string;
@@ -208,5 +209,116 @@ export class ReportService {
       records,
       totals,
     };
+  }
+
+  public static getGratuityProvisions(): GratuitySummaryReport {
+    const employees = db.prepare(`
+      SELECT 
+        e.id as employeeId,
+        e.employee_code as employeeCode,
+        (e.first_name || ' ' || e.last_name) as fullName,
+        d.name as departmentName,
+        e.hire_date as hireDate,
+        e.base_salary_cents as baseSalaryCents,
+        e.employment_status as employmentStatus
+      FROM employees e
+      JOIN departments d ON e.department_id = d.id
+      WHERE e.employment_status IN ('ACTIVE', 'PROBATION')
+      ORDER BY e.hire_date ASC
+    `).all() as any[];
+
+    const now = new Date();
+    let totalStatutoryLiabilityCents = 0;
+    let totalLkas19ReserveCents = 0;
+    let vestedCount = 0;
+    let unvestedCount = 0;
+    let totalTenureDays = 0;
+
+    const records: GratuityProvisionRow[] = employees.map((emp) => {
+      const hire = new Date(emp.hireDate);
+      const diffMs = now.getTime() - hire.getTime();
+      const diffDays = Math.max(0, diffMs / (1000 * 60 * 60 * 24));
+      totalTenureDays += diffDays;
+      const exactYears = diffDays / 365.25;
+      const completedYears = Math.floor(exactYears);
+      const isVested = completedYears >= 5;
+
+      const monthlySalaryLkr = emp.baseSalaryCents / 100;
+      // Statutory Gratuity under Act No. 12 (vested >= 5 completed years)
+      const statutoryGratuityLiabilityCents = isVested
+        ? Math.round(completedYears * (emp.baseSalaryCents / 2))
+        : 0;
+
+      // LKAS 19 Employee Benefits standard actuarial accrual reserve
+      const accruedLkas19ReserveCents = Math.round(exactYears * (emp.baseSalaryCents / 2));
+
+      if (isVested) {
+        vestedCount++;
+      } else {
+        unvestedCount++;
+      }
+
+      totalStatutoryLiabilityCents += statutoryGratuityLiabilityCents;
+      totalLkas19ReserveCents += accruedLkas19ReserveCents;
+
+      return {
+        employeeId: emp.employeeId,
+        employeeCode: emp.employeeCode,
+        fullName: emp.fullName,
+        departmentName: emp.departmentName,
+        hireDate: emp.hireDate,
+        yearsOfService: parseFloat(exactYears.toFixed(2)),
+        isVested,
+        baseSalaryCents: emp.baseSalaryCents,
+        monthlySalaryLkr,
+        statutoryGratuityLiabilityCents,
+        accruedLkas19ReserveCents,
+      };
+    });
+
+    const averageTenureYears = employees.length > 0
+      ? parseFloat((totalTenureDays / (employees.length * 365.25)).toFixed(2))
+      : 0;
+
+    return {
+      records,
+      totals: {
+        totalEmployees: employees.length,
+        vestedEmployees: vestedCount,
+        unvestedEmployees: unvestedCount,
+        totalStatutoryLiabilityCents,
+        totalLkas19ReserveCents,
+        averageTenureYears,
+      },
+    };
+  }
+
+  public static exportGratuityCsv(): string {
+    const report = this.getGratuityProvisions();
+    const headers = [
+      'Employee Code',
+      'Full Name',
+      'Department',
+      'Hire Date',
+      'Years of Service',
+      'Vesting Status',
+      'Monthly Basic Salary (LKR)',
+      'Statutory Gratuity Liability (LKR)',
+      'LKAS 19 Reserve (LKR)',
+    ];
+
+    const rows = report.records.map((r) => [
+      `"${r.employeeCode}"`,
+      `"${r.fullName}"`,
+      `"${r.departmentName}"`,
+      r.hireDate,
+      r.yearsOfService.toString(),
+      r.isVested ? 'Vested (>= 5 Yrs)' : 'Unvested (< 5 Yrs)',
+      (r.baseSalaryCents / 100).toFixed(2),
+      (r.statutoryGratuityLiabilityCents / 100).toFixed(2),
+      (r.accruedLkas19ReserveCents / 100).toFixed(2),
+    ]);
+
+    return [headers.join(','), ...rows.map((row) => row.join(','))].join('\n');
   }
 }

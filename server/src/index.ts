@@ -16,6 +16,8 @@ import payrollRoutes from './routes/payroll.routes.js';
 import dashboardRoutes from './routes/dashboard.routes.js';
 import auditRoutes from './routes/audit.routes.js';
 import reportRoutes from './routes/report.routes.js';
+import notificationRoutes from './routes/notification.routes.js';
+import documentRoutes from './routes/document.routes.js';
 
 dotenv.config();
 
@@ -37,7 +39,7 @@ app.use(
     allowedHeaders: ['Content-Type', 'Authorization'],
   })
 );
-app.use(express.json({ limit: '1mb' }));
+app.use(express.json({ limit: '10mb' }));
 app.use(morgan('dev'));
 
 // Health Check Endpoint
@@ -60,6 +62,8 @@ app.use('/api/payroll', payrollRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/audit-logs', auditRoutes);
 app.use('/api/reports', reportRoutes);
+app.use('/api/notifications', notificationRoutes);
+app.use('/api/documents', documentRoutes);
 
 // Static client SPA serving (Unified single-service production mode)
 const __filename = fileURLToPath(import.meta.url);

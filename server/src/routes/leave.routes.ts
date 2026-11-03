@@ -14,6 +14,8 @@ const applyLeaveSchema = z.object({
   endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   totalDays: z.number().positive(),
   reason: z.string().min(3),
+  attachmentName: z.string().optional(),
+  attachmentUrl: z.string().optional(),
 });
 
 const reviewLeaveSchema = z.object({

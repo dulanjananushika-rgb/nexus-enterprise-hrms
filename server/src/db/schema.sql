@@ -126,6 +126,8 @@ CREATE TABLE IF NOT EXISTS leave_applications (
     status TEXT NOT NULL DEFAULT 'PENDING' CHECK(status IN ('PENDING', 'APPROVED_MANAGER', 'APPROVED_HR', 'REJECTED', 'CANCELLED')),
     reviewed_by_user_id TEXT,
     rejection_reason TEXT,
+    attachment_name TEXT,
+    attachment_url TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now')),
     FOREIGN KEY(employee_id) REFERENCES employees(id) ON DELETE CASCADE,
@@ -190,3 +192,40 @@ CREATE TABLE IF NOT EXISTS audit_logs (
 
 CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_logs(created_at);
 CREATE INDEX IF NOT EXISTS idx_audit_entity ON audit_logs(entity_type, entity_id);
+
+-- 9. Real-time In-App Notifications
+CREATE TABLE IF NOT EXISTS notifications (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    title TEXT NOT NULL,
+    message TEXT NOT NULL,
+    type TEXT NOT NULL CHECK(type IN ('LEAVE', 'PAYROLL', 'ATTENDANCE', 'SYSTEM')),
+    link TEXT,
+    is_read INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, is_read);
+
+-- 10. Employee Document Vault & Attachments
+CREATE TABLE IF NOT EXISTS documents (
+    id TEXT PRIMARY KEY,
+    employee_id TEXT NOT NULL,
+    title TEXT NOT NULL,
+    category TEXT NOT NULL CHECK(category IN ('NIC_PASSPORT', 'APPOINTMENT_LETTER', 'CV', 'MEDICAL_SLIP', 'CERTIFICATE', 'OTHER')),
+    file_name TEXT NOT NULL,
+    file_path TEXT NOT NULL,
+    file_size_bytes INTEGER NOT NULL,
+    mime_type TEXT NOT NULL,
+    uploaded_by_user_id TEXT NOT NULL,
+    notes TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY(employee_id) REFERENCES employees(id) ON DELETE CASCADE,
+    FOREIGN KEY(uploaded_by_user_id) REFERENCES users(id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_documents_employee ON documents(employee_id);
+CREATE INDEX IF NOT EXISTS idx_documents_category ON documents(category);
+
+

@@ -109,4 +109,26 @@ router.get('/my-payslips', authenticate, (req: AuthenticatedRequest, res: Respon
   }
 });
 
+router.get('/payslips/:id/print', authenticate, (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const slip = PayrollService.getPayslipById(req.params.id as string);
+    if (!slip) {
+      res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Payslip not found.' } });
+      return;
+    }
+
+    if (req.user?.role === 'EMPLOYEE' && req.user.employeeId !== slip.employee_id) {
+      res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: 'Unauthorized to view this payslip.' } });
+      return;
+    }
+
+    const html = PayrollService.generatePayslipHtml(req.params.id as string);
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.send(html);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Error generating printable payslip.';
+    res.status(500).json({ success: false, error: { code: 'PRINT_FAILED', message } });
+  }
+});
+
 export default router;
