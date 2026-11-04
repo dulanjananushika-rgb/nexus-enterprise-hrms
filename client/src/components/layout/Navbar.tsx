@@ -239,10 +239,10 @@ export const Navbar: React.FC = () => {
 
   const getRoleBadgeColor = (role: string) => {
     switch (role) {
-      case 'SUPER_ADMIN': return 'bg-purple-100 text-purple-800 border-purple-200';
-      case 'HR_MANAGER': return 'bg-emerald-100 text-emerald-800 border-emerald-200';
-      case 'LINE_MANAGER': return 'bg-blue-100 text-blue-800 border-blue-200';
-      default: return 'bg-slate-100 text-slate-800 border-slate-200';
+      case 'SUPER_ADMIN': return 'bg-[#0c0c0d] text-white border-white/20 font-mono text-[10px] uppercase tracking-wider';
+      case 'HR_MANAGER': return 'bg-[#ff5a1f]/10 text-[#ff5a1f] border-[#ff5a1f]/30 font-mono text-[10px] uppercase tracking-wider';
+      case 'LINE_MANAGER': return 'bg-amber-50 text-amber-800 border-amber-300 font-mono text-[10px] uppercase tracking-wider';
+      default: return 'bg-slate-100 text-slate-800 border-slate-200 font-mono text-[10px] uppercase tracking-wider';
     }
   };
 
@@ -261,28 +261,28 @@ export const Navbar: React.FC = () => {
 
   return (
     <>
-      <header className="h-16 bg-white border-b border-slate-200 px-6 flex items-center justify-between sticky top-0 z-30 shadow-sm">
+      <header className="h-16 bg-[#f4f4f2]/95 backdrop-blur-md border-b border-[#0c0c0d]/10 px-6 flex items-center justify-between sticky top-0 z-30 shadow-sm">
         {/* Left: Brand & Local Clock */}
         <div className="flex items-center space-x-4">
           <div className="flex items-center space-x-2.5">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-600 to-indigo-500 flex items-center justify-center text-white font-black text-lg shadow-sm">
+            <div className="w-8 h-8 rounded-[7px_2px_7px_2px] -rotate-3 bg-[#0c0c0d] border border-white/20 flex items-center justify-center text-white font-black text-sm shadow-sm">
               N
             </div>
             <div className="flex items-center space-x-1.5">
-              <span className="font-extrabold text-xl tracking-tight text-slate-900">
+              <span className="font-extrabold text-xl tracking-[-0.04em] text-[#0c0c0d]">
                 NEXUS
               </span>
-              <span className="text-[10px] font-black tracking-widest uppercase bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded border border-indigo-100">
-                HRMS
+              <span className="font-mono text-[9px] font-bold tracking-widest uppercase bg-[#ff5a1f]/10 text-[#ff5a1f] px-1.5 py-0.5 rounded border border-[#ff5a1f]/30">
+                HRMS®
               </span>
             </div>
           </div>
 
-          <div className="hidden lg:flex items-center space-x-2 text-xs text-slate-500 bg-slate-50 px-3 py-1.5 rounded-full border border-slate-200">
-            <Clock className="w-3.5 h-3.5 text-indigo-500" />
-            <span className="font-mono font-medium text-slate-700">{time}</span>
+          <div className="hidden lg:flex items-center space-x-2 text-xs text-[#626368] bg-[#0c0c0d]/5 px-3 py-1 rounded-full border border-[#0c0c0d]/10 font-mono">
+            <Clock className="w-3.5 h-3.5 text-[#ff5a1f]" />
+            <span className="font-medium text-[#0c0c0d]">{time}</span>
             <span className="text-slate-300">|</span>
-            <span className="text-slate-500 text-[11px]">Colombo (GMT+5:30)</span>
+            <span className="text-[11px] uppercase tracking-wider">Colombo (GMT+5:30)</span>
           </div>
         </div>
 
@@ -295,7 +295,7 @@ export const Navbar: React.FC = () => {
                 <button
                   onClick={handleQuickClockIn}
                   disabled={loadingPunch}
-                  className="inline-flex items-center space-x-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg shadow-sm transition disabled:opacity-50"
+                  className="inline-flex items-center space-x-1.5 bg-[#ff5a1f] hover:bg-[#eb3e00] text-white font-mono text-xs uppercase tracking-wider px-3.5 py-1.5 rounded-full shadow-sm shadow-[#ff5a1f]/20 transition hover:-translate-y-0.5 disabled:opacity-50"
                 >
                   <CheckCircle className="w-3.5 h-3.5" />
                   <span>Clock In</span>
@@ -304,13 +304,13 @@ export const Navbar: React.FC = () => {
                 <button
                   onClick={handleQuickClockOut}
                   disabled={loadingPunch}
-                  className="inline-flex items-center space-x-1.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg shadow-sm transition disabled:opacity-50"
+                  className="inline-flex items-center space-x-1.5 bg-[#0c0c0d] hover:bg-neutral-800 text-white font-mono text-xs uppercase tracking-wider px-3.5 py-1.5 rounded-full shadow-sm transition hover:-translate-y-0.5 disabled:opacity-50"
                 >
                   <Clock className="w-3.5 h-3.5" />
                   <span>Clock Out</span>
                 </button>
               ) : (
-                <span className="text-xs font-medium text-slate-500 bg-slate-100 px-2.5 py-1 rounded-md border border-slate-200">
+                <span className="font-mono text-[11px] uppercase tracking-wider text-slate-500 bg-[#0c0c0d]/5 px-3 py-1 rounded-full border border-[#0c0c0d]/10">
                   Shift Completed
                 </span>
               )}

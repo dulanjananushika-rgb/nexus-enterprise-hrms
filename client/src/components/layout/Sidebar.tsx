@@ -103,7 +103,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onTabChange }) => 
   ];
 
   return (
-    <aside className="w-64 bg-slate-900 text-slate-300 min-h-[calc(100vh-4rem)] flex flex-col justify-between p-4 shrink-0 border-r border-slate-800">
+    <aside className="w-64 bg-[#0c0c0d] text-slate-300 min-h-[calc(100vh-4rem)] flex flex-col justify-between p-4 shrink-0 border-r border-white/10 font-sans">
       <div className="space-y-6">
         {sections.map((section, idx) => {
           const visibleItems = section.items.filter((item) => item.roles.includes(role));
@@ -111,7 +111,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onTabChange }) => 
 
           return (
             <div key={idx} className="space-y-1.5">
-              <div className="text-[10px] font-black uppercase tracking-widest text-slate-500 px-3">
+              <div className="font-mono text-[9px] font-bold uppercase tracking-widest text-slate-500 px-3">
                 {section.title}
               </div>
               <nav className="space-y-0.5">
@@ -122,10 +122,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onTabChange }) => 
                     <button
                       key={item.id}
                       onClick={() => onTabChange(item.id)}
-                      className={`w-full flex items-center space-x-3 px-3 py-2 rounded-xl text-xs font-semibold transition ${
+                      className={`w-full flex items-center space-x-3 px-3 py-2 rounded-xl text-xs font-medium transition ${
                         isActive
-                          ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-600/30'
-                          : 'hover:bg-slate-800/80 text-slate-400 hover:text-slate-100'
+                          ? 'bg-[#ff5a1f] text-white shadow-md shadow-[#ff5a1f]/20 font-semibold'
+                          : 'hover:bg-white/5 text-slate-400 hover:text-white'
                       }`}
                     >
                       <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-white' : 'text-slate-400'}`} />
@@ -139,12 +139,17 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onTabChange }) => 
         })}
       </div>
 
-      <div className="pt-4 border-t border-slate-800/80 text-[11px] text-slate-500 px-3 space-y-1">
-        <div className="font-bold text-slate-300 flex items-center space-x-1.5">
-          <span className="w-2 h-2 rounded-full bg-emerald-500" />
+      <div className="pt-4 border-t border-white/10 font-mono text-[10px] text-slate-400 px-3 space-y-1.5">
+        <div className="font-bold text-white flex items-center space-x-2">
+          <span className="w-2 h-2 rounded-full bg-[#ff5a1f] shadow-[0_0_0_3px_rgba(255,90,31,0.25)] animate-pulse" />
           <span>Nexus Core v1.0.0</span>
         </div>
-        <div className="text-[10px] text-slate-500">Shop & Office / EPF / ETF Compliant</div>
+        <div className="text-[9px] text-slate-500 uppercase tracking-wider">
+          Dulanjan Portfolio Showcase
+        </div>
+        <div className="text-[9px] text-slate-500">
+          EPF / ETF / APIT / Gratuity
+        </div>
       </div>
     </aside>
   );

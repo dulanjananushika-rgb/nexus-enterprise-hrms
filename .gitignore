@@ -6,4 +6,6 @@ data/*.db*
 !data/.gitkeep
 backups/
 uploads/
+cloudflared.exe
+
 
